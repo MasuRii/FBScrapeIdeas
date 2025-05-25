@@ -166,7 +166,6 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                 "//div[@data-testid='dialog']",
                 "//div[contains(@role, 'dialog')]",
                 "//div[@aria-label='View site information']",
-                "//div[contains(@class, 'x1n2onr6') and contains(@class, 'x78zum5') and contains(@class, 'x1q0g3np')]",
                 "//button[text()='Not Now']",
                 "//a[@aria-label='Close']"
             ]
