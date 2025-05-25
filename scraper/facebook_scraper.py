@@ -32,59 +32,85 @@ def check_facebook_session(driver: WebDriver) -> bool:
         return False
 
 def login_to_facebook(driver: WebDriver, username: str, password: str) -> bool:
-    """Automates logging into Facebook with provided credentials."""
-    print("Attempting to log in to Facebook...")
-    driver.get("https://www.facebook.com/")
+    """
+    Automates logging into Facebook using provided credentials.
 
+    Args:
+        driver: The Selenium WebDriver instance.
+        username: The Facebook username (email or phone).
+        password: The Facebook password.
+
+    Returns:
+        True if login is successful, False otherwise.
+    """
+    login_successful = False
     try:
+        logging.info("Navigating to Facebook login page.")
+        driver.get("https://www.facebook.com/")
+
         try:
-            accept_cookies_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Allow all cookies')] | //button[contains(text(), 'Accept All')] | //button[contains(text(), 'Allow Cookies')]"))
+            accept_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Allow essential and optional cookies')]"))
             )
-            accept_cookies_button.click()
-            print("Accepted cookie consent.")
+            accept_button.click()
+            logging.info("Accepted cookie consent.")
             time.sleep(2)
-        except TimeoutException:
-            print("No cookie consent dialog found or timed out.")
+        except (NoSuchElementException, TimeoutException):
+            logging.info("No cookie consent dialog found or already accepted.")
             pass
 
-        email_field = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "email"))
+        logging.info("Attempting to find email/phone field.")
+        email_field = WebDriverWait(driver, 20).until(
+            EC.visibility_of_element_located((By.ID, "email"))
         )
-        password_field = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "pass"))
-        )
-
+        logging.info("Email field found. Entering username.")
         email_field.send_keys(username)
+
+        logging.info("Attempting to find password field.")
+        password_field = WebDriverWait(driver, 20).until(
+            EC.visibility_of_element_located((By.ID, "pass"))
+        )
+        logging.info("Password field found. Entering password.")
         password_field.send_keys(password)
 
-        login_button = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.NAME, "login"))
+        logging.info("Attempting to find login button.")
+        login_button = WebDriverWait(driver, 20).until(
+             EC.element_to_be_clickable((By.NAME, "login"))
         )
+        logging.info("Login button found. Clicking login.")
         login_button.click()
 
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.XPATH, "//div[@role='feed'] | //a[@aria-label='Home']"))
-        )
-        print("Login successful.")
-        if "checkpoint" in driver.current_url or "security_check" in driver.current_url:
-             logging.warning("Detected potential security check or CAPTCHA after login. Manual intervention may be required.")
-             pass
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((
+                    By.XPATH, "//div[@role='feed'] | //a[@aria-label='Home'] | //div[contains(@data-pagelet, 'Feed')]"
+                ))
+            )
+            logging.info("Login successful: Feed element or Home link found.")
+            login_successful = True
+        except TimeoutException:
+            logging.warning("Login appeared to fail or took too long to redirect.")
+            error_message = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='login_error_message']")
+            if error_message:
+                logging.error(f"Facebook login error message: {error_message[0].text}")
+            else:
+                logging.error("Login failed: Timeout waiting for post-login page or element.")
+            login_successful = False
 
-        return True
-
-    except TimeoutException:
-        logging.error("Login failed: Timed out waiting for elements (login form or post-login indicator).")
-        return False
-    except NoSuchElementException:
-        logging.error("Login failed: Could not find login elements (email, password, or login button).")
-        return False
+    except (NoSuchElementException, TimeoutException) as e:
+        logging.error(f"Selenium element error during login: {e}")
+        login_successful = False
     except WebDriverException as e:
-        logging.error(f"A WebDriver error occurred during login: {e}")
-        return False
+        logging.error(f"WebDriver error during login: {e}")
+        login_successful = False
     except Exception as e:
-        logging.error(f"An unexpected error occurred during login: {e}", exc_info=True)
-        return False
+        logging.error(f"An unexpected error occurred during login: {e}")
+        login_successful = False
+
+    if login_successful:
+         pass
+
+    return login_successful
 
 def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int) -> List[Dict[str, Any]]:
     """
@@ -101,10 +127,6 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
     scraped_posts: List[Dict[str, Any]] = []
     processed_post_urls: set[str] = set()
     processed_post_ids: set[str] = set()
-
-    if not check_facebook_session(driver):
-        logging.error("Authenticated session is invalid before starting scraping. Aborting scraping.")
-        return []
 
     logging.info(f"Navigating to group: {group_url}")
     try:
@@ -127,7 +149,7 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
 
         extracted_count = 0
         scroll_pause_time = 3
-        max_scroll_attempts = 20
+        max_scroll_attempts = 50
 
         logging.info(f"Starting to scrape up to {num_posts} posts...")
 
@@ -139,6 +161,41 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
 
             time.sleep(scroll_pause_time)
+
+            overlay_selectors = [
+                "//div[@data-testid='dialog']",
+                "//div[contains(@role, 'dialog')]",
+                "//div[@aria-label='View site information']",
+                "//div[contains(@class, 'x1n2onr6') and contains(@class, 'x78zum5') and contains(@class, 'x1q0g3np')]",
+                "//button[text()='Not Now']",
+                "//a[@aria-label='Close']"
+            ]
+
+            for selector in overlay_selectors:
+                try:
+                    overlays = driver.find_elements(By.XPATH, selector)
+                    for overlay in overlays:
+                        if overlay.is_displayed():
+                            logging.warning(f"Potential overlay detected with selector: {selector}. Attempting to dismiss.")
+                            try:
+                                dismiss_button = overlay.find_element(By.XPATH, ".//button[text()='Not Now'] | .//a[@aria-label='Close'] | .//button[contains(text(), 'Close')] | .//button[contains(text(), 'Dismiss')] | .//button[contains(text(), 'Later')] | .//div[@role='button'][contains(text(), 'Not Now')] | .//div[@role='button'][contains(text(), 'Later')]")
+                                if dismiss_button.is_displayed() and dismiss_button.is_enabled():
+                                     dismiss_button.click()
+                                     logging.info("Overlay dismissed.")
+                                     time.sleep(2)
+                                     break
+                                else:
+                                    logging.debug("Found overlay, but dismiss button not visible or enabled.")
+                            except NoSuchElementException:
+                                logging.debug("No standard dismiss button found within overlay. Skipping dismissal for this overlay.")
+                            except Exception as overlay_e:
+                                logging.error(f"Error attempting to dismiss overlay: {overlay_e}")
+                    if overlays and overlays[0].is_displayed():
+                         logging.warning(f"Overlay(s) found but could not dismiss using standard buttons. Scrolling might be blocked.")
+
+                except Exception as selector_e:
+                    logging.debug(f"Error checking for overlay with selector {selector}: {selector_e}")
+
 
             potential_post_elements = driver.find_elements(By.XPATH,
                 "//div[@role='feed']/div/div/div[starts-with(@class, 'x')] | "
@@ -334,6 +391,25 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
 
     return scraped_posts
 
-
-
-
+def is_facebook_session_valid(driver: WebDriver) -> bool:
+    """
+    Performs a basic check to see if the current Facebook session in the driver is still active.
+    """
+    try:
+        logging.info("Checking Facebook session validity...")
+        driver.get("https://www.facebook.com/settings")
+        WebDriverWait(driver, 10).until(
+            EC.url_contains("settings")
+            or EC.presence_of_element_located((By.CSS_SELECTOR, "div[aria-label='Facebook']"))
+        )
+        logging.info("Session appears valid.")
+        return True
+    except TimeoutException:
+        logging.warning("Session check timed out or redirected to login. Session may be invalid.")
+        return False
+    except WebDriverException as e:
+        logging.error(f"WebDriver error during session check: {e}")
+        return False
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during session check: {e}")
+        return False

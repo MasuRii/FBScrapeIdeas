@@ -1,16 +1,27 @@
 import argparse
 import sqlite3
-from scraper.facebook_scraper import scrape_facebook_group
+import logging
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group, is_facebook_session_valid
 from database.crud import get_db_connection, add_scraped_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts
 from ai.gemini_service import create_post_batches, categorize_posts_batch
+from config import get_facebook_credentials
+from database.db_setup import init_db
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def main():
+    init_db()
+
     parser = argparse.ArgumentParser(description='University Group Insights Platform CLI')
     subparsers = parser.add_subparsers(dest='command')
 
     scrape_parser = subparsers.add_parser('scrape', help='Initiate the Facebook scraping process and store results in DB.')
-    scrape_parser.add_argument('--group-url', required=True, help='The URL of the public Facebook group to scrape.')
+    scrape_parser.add_argument('--group-url', required=True, help='The URL of the Facebook group to scrape.')
     scrape_parser.add_argument('--num-posts', type=int, default=20, help='The number of posts to attempt to scrape (default: 20).')
+    scrape_parser.add_argument('--headless', action='store_true', help='Run the browser in headless mode (no GUI).')
 
     process_ai_parser = subparsers.add_parser('process-ai', help='Fetch unprocessed posts, send them to Gemini for categorization, and update DB.')
 
@@ -20,23 +31,60 @@ def main():
     args = parser.parse_args()
 
     if args.command == 'scrape':
-        print(f"Running scrape command for {args.group_url} (fetching {args.num_posts} posts)...")
+        logging.info(f"Running scrape command for {args.group_url} (fetching {args.num_posts} posts).")
         
-        conn = get_db_connection()
-        if conn:
-            try:
-                scraped_posts = scrape_facebook_group(args.group_url, args.num_posts)
-                added_count = 0
-                for post in scraped_posts:
-                    add_scraped_post(conn, post)
-                    added_count += 1
-                print(f"Successfully scraped and added {added_count} posts to the database.")
-            except Exception as e:
-                print(f"An error occurred during scraping or database insertion: {e}")
-            finally:
+        driver = None
+        conn = None
+        try:
+            username, password = get_facebook_credentials()
+            
+            logging.info("Initializing Selenium WebDriver...")
+            options = webdriver.ChromeOptions()
+            if args.headless:
+                options.add_argument('--headless')
+                options.add_argument('--no-sandbox')
+                options.add_argument('--disable-dev-shm-usage')
+                options.add_argument('--window-size=1920,1080')
+            
+            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+            logging.info("WebDriver initialized.")
+
+            login_success = login_to_facebook(driver, username, password)
+            
+            if login_success:
+                logging.info("Facebook login successful.")
+                
+                conn = get_db_connection()
+                if conn:
+                    scraped_posts = scrape_authenticated_group(driver, args.group_url, args.num_posts)
+                    
+                    added_count = 0
+                    if scraped_posts:
+                        logging.info(f"Attempting to add {len(scraped_posts)} scraped posts to the database.")
+                        for post in scraped_posts:
+                            if add_scraped_post(conn, post):
+                                added_count += 1
+                        logging.info(f"Successfully added {added_count} new posts to the database.")
+                    else:
+                         logging.info("No posts were scraped.")
+                else:
+                    logging.error("Could not connect to the database.")
+                    
+            else:
+                logging.error("Facebook login failed. Cannot proceed with scraping.")
+
+        except Exception as e:
+            logging.error(f"An error occurred during the scraping process: {e}", exc_info=True)
+        finally:
+            if driver:
+                driver.quit()
+                logging.info("WebDriver closed.")
+            if conn:
                 conn.close()
-        else:
-            print("Could not connect to the database.")
+                logging.info("Database connection closed.")
 
     elif args.command == 'process-ai':
         print("Running process-ai command...")

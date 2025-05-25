@@ -18,10 +18,13 @@ def get_db_connection(db_name='insights.db'):
         logging.error(f"Database connection error: {e}")
         return None
 
-def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict):
+def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict) -> bool:
     """
     Inserts a new scraped post into the database.
     Avoids duplicates based on post_url.
+
+    Returns:
+        True if the post was successfully added or already existed, False otherwise.
     """
     sql = '''
         INSERT OR IGNORE INTO Posts (
@@ -40,11 +43,14 @@ def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict):
         db_conn.commit()
         if cursor.rowcount > 0:
             logging.info(f"Added new post: {post_data.get('post_url')}")
+            return True
         else:
             logging.info(f"Post already exists (ignored): {post_data.get('post_url')}")
+            return True
     except sqlite3.Error as e:
         logging.error(f"Error adding post {post_data.get('post_url')}: {e}")
         db_conn.rollback()
+        return False
 
 def update_post_with_ai_results(db_conn: sqlite3.Connection, internal_post_id: int, ai_data: Dict):
     """
