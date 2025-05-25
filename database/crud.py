@@ -36,7 +36,7 @@ def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict) -> bool:
         cursor.execute(sql, (
             post_data.get('facebook_post_id'),
             post_data.get('post_url'),
-            post_data.get('post_content_raw'),
+            post_data.get('content_text'),
             post_data.get('posted_at'),
             int(time.time())
         ))
