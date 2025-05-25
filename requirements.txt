@@ -1,4 +1,6 @@
 requests
 beautifulsoup4
 google-generativeai
-python-dotenv 
+python-dotenv
+selenium
+webdriver-manager 

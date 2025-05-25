@@ -1,3 +1,4 @@
 .venv/
 .env 
 .cursor
+__pycache__
