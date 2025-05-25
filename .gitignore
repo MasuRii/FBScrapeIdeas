@@ -2,3 +2,4 @@
 .env 
 .cursor
 __pycache__
+insights.db
