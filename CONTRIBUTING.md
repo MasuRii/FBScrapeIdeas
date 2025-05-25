@@ -29,7 +29,7 @@ We welcome suggestions for new features or improvements. Please open a new issue
 
 ## Coding Conventions
 
-(Specify any coding style guides, linting rules, or formatting preferences here. For now, follow standard Python practices and aim for readable code.)
+For now, follow standard Python practices and aim for readable code.
 
 ## Contact
 
