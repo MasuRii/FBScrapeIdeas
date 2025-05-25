@@ -11,6 +11,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 import time
 import re
 from urllib.parse import urlparse, parse_qs
+from dateutil.parser import parse
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -302,7 +303,8 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                             ".//div[@data-testid='post-content'] | " \
                             ".//div[@dir='auto'] | " \
                             ".//div[contains(@class, 'kvgmc6g5')] | " \
-                            ".//div[contains(@class, 'ecm0bbzt')]"
+                            ".//div[contains(@class, 'ecm0bbzt')] | " \
+                            ".//span[contains(@style, '--fontSize: 14px;') and contains(@style, '--lineHeight: 18.8711px;')]//div[@dir='auto']"
                          )
                          post_text = text_element.text.strip()
                          if len(post_text) < 20 and not any(kw in post_text.lower() for kw in ['post', 'share', 'comment']):
@@ -310,33 +312,97 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                              pass
 
                     except NoSuchElementException:
-                         logging.debug(f"Could not find standard text element for post (ID: {post_id}). Text will be N/A.")
+                         logging.warning(f"Could not find standard text element for post (ID: {post_id}). Text will be N/A.")
+                         logging.debug(f"HTML of post element where text extraction failed: {post_element.get_attribute('outerHTML')}")
                          post_text = "N/A"
 
+                    logging.info(f"Extracted post_text for {post_id}: '{post_text}'")
+
                     try:
-                         timestamp_element = post_element.find_element(By.XPATH, ".//abbr")
-                         datetime_str = timestamp_element.get_attribute('title')
-                         simple_time_text = timestamp_element.text
+                         timestamp_element = None
+                         timestamp_selectors = [
+                            ".//abbr",
+                            ".//a[contains(@href, '/posts/')]//abbr",
+                            ".//a[contains(@href, '/videos/')]//abbr",
+                            ".//a[contains(@href, '/photos/')]//abbr",
+                            ".//li[./span/div/a[contains(@href, '/posts/') or contains(@href, '/videos/') or contains(@href, '/photos/')]]//a[not(contains(@href, '/user/')) and string-length(text()) > 0]",
+                            ".//a[contains(@href, '/groups/') and (contains(@href, '/posts/') or contains(@href, '/videos/') or contains(@href, '/photos/')) and string-length(text()) > 0 and not(contains(@href, '/user/'))]",
+                            ".//div[@data-testid='post-header']//span/span/a/span/span"
+                         ]
+
+                         for selector in timestamp_selectors:
+                            try:
+                                timestamp_element = post_element.find_element(By.XPATH, selector)
+                                if timestamp_element and (timestamp_element.text.strip() or timestamp_element.get_attribute('title')):
+                                     logging.debug(f"Found timestamp element using selector: {selector}")
+                                     break
+                                else:
+                                     timestamp_element = None
+                            except NoSuchElementException:
+                                 logging.debug(f"Timestamp selector failed: {selector}")
+                                 continue
+
+                         datetime_str = None
+                         simple_time_text = None
+
+                         if timestamp_element:
+                            datetime_str = timestamp_element.get_attribute('title')
+                            simple_time_text = timestamp_element.text
+
+                         if not datetime_str and not simple_time_text:
+                             try:
+                                 aria_label = post_element.get_attribute('aria-label')
+                                 if aria_label and (' ago' in aria_label or ' at ' in aria_label):
+                                     logging.debug(f"Attempting to extract timestamp from aria-label: {aria_label}")
+                                     time_match = re.search(r'\b(\d+\s+(?:second|minute|hour|day|week|month|year)s? ago|at .*)$', aria_label)
+                                     if time_match:
+                                         simple_time_text = time_match.group(0).strip()
+                                         logging.debug(f"Extracted potential timestamp from aria-label: {simple_time_text}")
+
+                             except Exception as e:
+                                 logging.debug(f"Error extracting timestamp from aria-label: {e}")
+                                 pass
+
 
                          if datetime_str:
                              try:
                                  posted_at = datetime.strptime(datetime_str, "%A, %d %B %Y at %I:%M %p")
-                                 logging.debug(f"Parsed full datetime: {posted_at}")
+                                 logging.debug(f"Parsed full datetime from title: {posted_at}")
                              except ValueError:
-                                 logging.warning(f"Could not parse detailed timestamp format '{datetime_str}' for post (ID: {post_id}). Falling back to simple text.")
-                                 posted_at = simple_time_text
-                                 logging.debug(f"Using simple time text as timestamp: {posted_at}")
+                                 logging.warning(f"Could not parse detailed timestamp format '{datetime_str}' for post (ID: {post_id}).")
+                                 if simple_time_text:
+                                     try:
+                                         posted_at = parse(simple_time_text, fuzzy=True)
+                                         logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
+                                     except Exception as parse_e:
+                                         logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
+                                         posted_at = None
+                                 else:
+                                     posted_at = None
                          elif simple_time_text:
-                              logging.warning(f"Timestamp element found but 'title' attribute is missing for post (ID: {post_id}). Using simple text.")
-                              posted_at = simple_time_text
-                              logging.debug(f"Using simple time text as timestamp: {posted_at}")
+                              logging.warning(f"Timestamp element found but 'title' attribute is missing for post (ID: {post_id}). Attempting to parse simple text: '{simple_time_text}'")
+                              try:
+                                   posted_at = parse(simple_time_text, fuzzy=True)
+                                   logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
+                              except Exception as parse_e:
+                                  logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
+                                  posted_at = None
                          else:
                               logging.debug(f"Timestamp element found but no text or title attribute for post (ID: {post_id}).")
                               posted_at = None
 
                     except NoSuchElementException:
-                        logging.debug(f"Could not find timestamp element for post (ID: {post_id}). Timestamp will be None.")
+                        logging.warning(f"Could not find any standard timestamp element for post (ID: {post_id}). Timestamp will be None.")
+                        logging.debug(f"HTML of post element where timestamp extraction failed: {post_element.get_attribute('outerHTML')}")
                         posted_at = None
+                    except Exception as e:
+                         logging.warning(f"An error occurred during timestamp extraction for post (ID: {post_id}): {e}")
+                         logging.debug(f"HTML of post element where timestamp extraction failed: {post_element.get_attribute('outerHTML')}")
+                         posted_at = None
+
+                    logging.info(f"Extracted posted_at for {post_id}: '{posted_at}'")
+                    if posted_at is None:
+                        logging.debug(f"HTML of post element where timestamp extraction failed: {post_element.get_attribute('outerHTML')}")
 
                     if (post_url or post_id) and (post_text != "N/A" or posted_at is not None):
                          scraped_posts.append({
@@ -349,6 +415,8 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                          extracted_count += 1
                          if post_url: processed_post_urls.add(post_url)
                          if post_id: processed_post_ids.add(post_id)
+
+                         logging.info(f"Post {extracted_count} (ID: {post_id}) - Extracted Text: '{post_text}', Timestamp: '{posted_at}'")
 
                          logging.info(f"Extracted post {extracted_count}: URL: {post_url}, ID: {post_id}")
 
