@@ -1,0 +1,47 @@
+{
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "postId": {
+                "type": "STRING",
+                "description": "The temporary ID of the post provided in the input."
+            },
+            "category": {
+                "type": "STRING",
+                "description": "Primary category of the post."
+            },
+            "subCategory": {
+                "type": "STRING",
+                "description": "A more specific sub-category, if applicable."
+            },
+            "keywords": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "STRING"
+                },
+                "description": "List of 3-5 keywords from the post."
+            },
+            "summary": {
+                "type": "STRING",
+                "description": "A brief 1-2 sentence summary of the post's core message related to its category."
+            },
+            "isPotentialIdea": {
+                "type": "BOOLEAN",
+                "description": "True if the post explicitly or implicitly suggests a project/thesis idea."
+            },
+            "reasoning": {
+                "type": "STRING",
+                "description": "Brief justification for the assigned category."
+            }
+        },
+        "required": [
+            "postId",
+            "category",
+            "keywords",
+            "summary",
+            "isPotentialIdea",
+            "reasoning"
+        ]
+    }
+}
