@@ -87,47 +87,55 @@ def main():
                 logging.info("Database connection closed.")
 
     elif args.command == 'process-ai':
-        print("Running process-ai command...")
+        logging.info("Running process-ai command...")
         
         conn = get_db_connection()
         if conn:
             try:
                 unprocessed_posts = get_unprocessed_posts(conn)
+                logging.info(f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database.")
+                for i, post in enumerate(unprocessed_posts[:5]):
+                    logging.debug(f"  Post {i+1}: ID={post.get('internal_post_id')}, URL={post.get('post_url')}")
+
                 if not unprocessed_posts:
-                    print("No unprocessed posts found in the database.")
+                    logging.info("No unprocessed posts found in the database.")
                     return
                 
-                print(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
+                logging.info(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
                 post_batches = create_post_batches(unprocessed_posts)
                 
                 processed_count = 0
                 for i, batch in enumerate(post_batches):
-                    print(f"Processing batch {i+1}/{len(post_batches)} with {len(batch)} posts...")
+                    logging.info(f"Processing batch {i+1}/{len(post_batches)} with {len(batch)} posts...")
                     ai_results = categorize_posts_batch(batch)
                     
                     if ai_results:
+                        logging.info(f"Received {len(ai_results)} mapped AI results for batch {i+1}.")
                         for result in ai_results:
-                            internal_post_id = result.get('postId')
+                            internal_post_id = result.get('internal_post_id')
                             if internal_post_id is not None:
-                                original_post = next((p for p in batch if p.get('internal_post_id') == internal_post_id), None)
-                                if original_post:
-                                     update_post_with_ai_results(conn, original_post['internal_post_id'], result)
-                                     processed_count += 1
-                                else:
-                                     print(f"Warning: AI result for unknown postId {internal_post_id} ignored.")
-                            else:
-                                 print("Warning: AI result missing 'postId'. Cannot map to original post.")
-                    else:
-                        print(f"Warning: No AI results returned for batch {i+1}.")
+                                try:
+                                    logging.debug(f"Attempting to update post {internal_post_id} with AI results.")
 
-                print(f"Successfully processed {processed_count} posts with AI.")
+                                    update_post_with_ai_results(conn, internal_post_id, result)
+
+                                    logging.debug(f"Successfully updated post {internal_post_id} with AI results.")
+                                    processed_count += 1
+                                except Exception as db_e:
+                                     logging.error(f"Error updating post {internal_post_id} with AI results: {db_e}")
+                            else:
+                                 logging.error(f"AI result missing 'internal_post_id'. Cannot update database for result: {result}")
+                    else:
+                        logging.warning(f"No AI results returned or mapped for batch {i+1}.")
+
+                logging.info(f"Successfully processed {processed_count} posts with AI.")
 
             except Exception as e:
-                print(f"An error occurred during AI processing or database update: {e}")
+                logging.error(f"An error occurred during AI processing or database update: {e}", exc_info=True)
             finally:
                 conn.close()
         else:
-            print("Could not connect to the database.")
+            logging.error("Could not connect to the database.")
 
     elif args.command == 'view':
         category_filter = args.category if args.category else None

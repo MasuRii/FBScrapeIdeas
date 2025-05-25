@@ -99,7 +99,7 @@ def get_unprocessed_posts(db_conn: sqlite3.Connection) -> List[Dict]:
     sql = '''
         SELECT internal_post_id, post_content_raw
         FROM Posts
-        WHERE is_processed_by_ai = 0
+        WHERE is_processed_by_ai = 0 AND post_content_raw IS NOT NULL
     '''
     try:
         cursor = db_conn.cursor()

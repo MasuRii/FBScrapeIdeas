@@ -264,7 +264,7 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                              is_valid_post = True
                         except NoSuchElementException:
                              is_valid_post = False
-                             logging.debug("Element does not appear to be a post (no standard link or timestamp found). Skipping.")
+                             logging.debug(f"Element does not appear to be a post (no standard link or timestamp found). Skipping element from scroll attempt {scroll_attempt}.")
                              continue
 
                     if not post_id and post_url:
@@ -294,7 +294,7 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                         logging.debug(f"Skipping already processed post by ID: {post_id}")
                         continue
                     if not post_url and not post_id:
-                         logging.debug("Could not determine post URL or ID. Skipping element.")
+                         logging.debug(f"Could not determine post URL or ID. Skipping element from scroll attempt {scroll_attempt}.")
                          continue
 
 
@@ -308,12 +308,12 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                          )
                          post_text = text_element.text.strip()
                          if len(post_text) < 20 and not any(kw in post_text.lower() for kw in ['post', 'share', 'comment']):
-                             logging.debug(f"Post text seems too short ({len(post_text)} chars), may not be main content. ID: {post_id}")
+                             logging.warning(f"Post text seems too short ({len(post_text)} chars), may not be main content. ID: {post_id}, URL: {post_url}")
                              pass
 
                     except NoSuchElementException:
-                         logging.warning(f"Could not find standard text element for post (ID: {post_id}). Text will be N/A.")
-                         logging.debug(f"HTML of post element where text extraction failed: {post_element.get_attribute('outerHTML')}")
+                         logging.warning(f"Could not find standard text element for post (ID: {post_id}, URL: {post_url}). Text will be N/A.")
+                         logging.debug(f"HTML of post element where text extraction failed for post (ID: {post_id}, URL: {post_url}): {post_element.get_attribute('outerHTML')}")
                          post_text = "N/A"
 
                     logging.info(f"Extracted post_text for {post_id}: '{post_text}'")
@@ -392,12 +392,12 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                               posted_at = None
 
                     except NoSuchElementException:
-                        logging.warning(f"Could not find any standard timestamp element for post (ID: {post_id}). Timestamp will be None.")
-                        logging.debug(f"HTML of post element where timestamp extraction failed: {post_element.get_attribute('outerHTML')}")
+                        logging.warning(f"Could not find any standard timestamp element for post (ID: {post_id}, URL: {post_url}). Timestamp will be None.")
+                        logging.debug(f"HTML of post element where timestamp extraction failed for post (ID: {post_id}, URL: {post_url}): {post_element.get_attribute('outerHTML')}")
                         posted_at = None
                     except Exception as e:
-                         logging.warning(f"An error occurred during timestamp extraction for post (ID: {post_id}): {e}")
-                         logging.debug(f"HTML of post element where timestamp extraction failed: {post_element.get_attribute('outerHTML')}")
+                         logging.warning(f"An error occurred during timestamp extraction for post (ID: {post_id}, URL: {post_url}): {e}")
+                         logging.debug(f"HTML of post element where timestamp extraction failed for post (ID: {post_id}, URL: {post_url}): {post_element.get_attribute('outerHTML')}")
                          posted_at = None
 
                     logging.info(f"Extracted posted_at for {post_id}: '{posted_at}'")

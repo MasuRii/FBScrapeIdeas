@@ -61,19 +61,40 @@ def categorize_posts_batch(
 
     prompt_text = "".join(prompt_parts)
 
+    logging.debug(f"Generated prompt (first 500 chars): {prompt_text[:500]}...")
+    logging.debug(f"Prompt length: {len(prompt_text)}")
+
     generation_config = {
-        "responseMimeType": "application/json",
-        "responseSchema": response_schema
+        "response_mime_type": "application/json",
+        "response_schema": response_schema
     }
+
+    logging.debug(f"Generation config: {generation_config}")
 
     attempt = 0
     while attempt < max_retries:
         try:
             logging.info(f"Attempt {attempt + 1} to categorize {len(posts)} posts.")
+            logging.debug("Making Gemini API call...")
             response = model.generate_content(prompt_text, generation_config=generation_config)
-            response.raise_for_status()
 
-            categorized_results_list = json.loads(response.text)
+            if not response or not response.candidates:
+                block_reason = response.prompt_feedback.block_reason if hasattr(response, 'prompt_feedback') and response.prompt_feedback else 'unknown'
+                logging.error(f"Gemini API call failed or returned no candidates. Block reason: {block_reason}. Raw response: {response.text if hasattr(response, 'text') else str(response)}")
+                if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
+                    return []
+                raise Exception(f"API call failed or no candidates returned. Block reason: {block_reason}")
+
+            logging.info("Gemini API call successful, received candidates.")
+            logging.debug(f"Raw Gemini response text: {response.text}")
+
+            logging.debug("Attempting to parse Gemini response JSON...")
+            try:
+                 categorized_results_list = json.loads(response.text)
+                 logging.debug("Successfully parsed Gemini response JSON.")
+            except json.JSONDecodeError as e:
+                 logging.error(f"JSONDecodeError during parsing Gemini response: {e}. Raw response text: {response.text}")
+                 raise e
 
             if not isinstance(categorized_results_list, list):
                  logging.error(f"Gemini response was not a list: {response.text}")
@@ -88,36 +109,72 @@ def categorize_posts_batch(
                  continue
 
             mapped_results = []
-            for ai_result in categorized_results_list:
-                post_id = ai_result.get('postId')
-                if post_id and post_id.startswith('POST_ID_'):
-                    original_id = int(post_id.replace('POST_ID_', ''))
-                    if original_id in post_id_map:
-                        original_post = post_id_map[original_id]
-                        combined_data = original_post.copy()
-                        combined_data.update({
-                            'ai_category': ai_result.get('category'),
-                            'ai_sub_category': ai_result.get('subCategory'),
-                            'ai_keywords': json.dumps(ai_result.get('keywords', [])),
-                            'ai_summary': ai_result.get('summary'),
-                            'ai_is_potential_idea': int(ai_result.get('isPotentialIdea', False)),
-                            'ai_reasoning': ai_result.get('reasoning'),
-                            'ai_raw_response': json.dumps(ai_result),
-                            'is_processed_by_ai': 1,
-                            'last_ai_processing_at': int(time.time())
-                        })
-                        mapped_results.append(combined_data)
-                    else:
-                        logging.warning(f"Gemini returned unknown postId: {post_id}")
-                else:
-                    logging.warning(f"Gemini returned invalid postId format or missing: {ai_result.get('postId')}")
+            post_content_map = {post['post_content_raw']: post for post in posts if post.get('post_content_raw')}
+            post_content_hash_map = {hash(post['post_content_raw']): post for post in posts if post.get('post_content_raw')}
 
-            logging.info("Successfully categorized and mapped posts.")
+            for ai_result in categorized_results_list:
+                logging.debug(f"Processing AI result: {ai_result}")
+                original_post = None
+                post_id_from_ai = ai_result.get('postId')
+                logging.debug(f"AI result postId: {post_id_from_ai}")
+
+                if post_id_from_ai and post_id_from_ai.startswith('POST_ID_'):
+                    try:
+                        original_id = int(post_id_from_ai.replace('POST_ID_', ''))
+                        if original_id in post_id_map:
+                            original_post = post_id_map[original_id]
+                            logging.debug(f"Mapped AI result using postId: {post_id_from_ai} to original post ID: {original_id}")
+                        else:
+                            logging.warning(f"Gemini returned unknown postId {post_id_from_ai}. Original ID {original_id} not in post_id_map. Attempting fallback match.")
+                    except (ValueError, IndexError) as e:
+                        logging.warning(f"Gemini returned invalid postId format: {post_id_from_ai}. Error: {e}. Attempting fallback match.")
+
+                if not original_post:
+                    logging.debug("Attempting fallback mapping by content.")
+                    ai_summary = ai_result.get('summary', '')
+                    matching_post = None
+
+                    for original in posts:
+                        if original.get('post_content_raw') and ai_summary and ai_summary in original['post_content_raw']:
+                            matching_post = original
+                            break
+
+                    if matching_post:
+                         original_post = matching_post
+                         logging.warning(f"Mapped AI result using summary content match. Original Post ID: {original_post.get('internal_post_id')}")
+                    else:
+                         logging.warning(f"Could not map AI result (postId: {post_id_from_ai}, summary: '{ai_summary[:50]}...') to any original post.")
+
+                if original_post:
+                    combined_data = original_post.copy()
+                    combined_data.update({
+                        'ai_category': ai_result.get('category'),
+                        'ai_sub_category': ai_result.get('subCategory'),
+                        'ai_keywords': json.dumps(ai_result.get('keywords', [])),
+                        'ai_summary': ai_result.get('summary'),
+                        'ai_is_potential_idea': int(ai_result.get('isPotentialIdea', False)),
+                        'ai_reasoning': ai_result.get('reasoning'),
+                        'ai_raw_response': json.dumps(ai_result),
+                        'is_processed_by_ai': 1,
+                        'last_ai_processing_at': int(time.time())
+                    })
+                    mapped_results.append(combined_data)
+                else:
+                     logging.warning(f"Skipping AI result that could not be mapped to an original post: {ai_result}")
+
+            logging.info(f"Successfully categorized and mapped {len(mapped_results)} posts.")
+            unmapped_count = len(categorized_results_list) - len(mapped_results)
+            if unmapped_count > 0:
+                logging.warning(f"Warning: {unmapped_count} AI results could not be mapped back to original posts.")
             return mapped_results
 
         except Exception as e:
             attempt += 1
-            logging.error(f"API call or processing failed (Attempt {attempt}/{max_retries}): {e}")
+            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                 logging.error(f"API call failed with status code {e.response.status_code}: {e.response.text}")
+            else:
+                 logging.error(f"API call or processing failed (Attempt {attempt}/{max_retries}): {e}")
+
             if attempt < max_retries:
                 delay = initial_delay * (2 ** (attempt - 1))
                 logging.info(f"Retrying in {delay} seconds...")
@@ -126,6 +183,7 @@ def categorize_posts_batch(
                 logging.error(f"Max retries ({max_retries}) reached. Failed to categorize posts.")
                 return []
 
+    logging.error("Exited retry loop without successful categorization.")
     return []
 
 def create_post_batches(all_posts: List[Dict], batch_size_chars: int = 700000) -> List[List[Dict]]:
