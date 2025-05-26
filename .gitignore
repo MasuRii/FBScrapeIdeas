@@ -3,3 +3,4 @@
 .cursor
 __pycache__
 insights.db
+.vscode

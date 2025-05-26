@@ -1,257 +1,205 @@
-# University Group Insights Platform
+# University Group Insights Platform <img src="https://raw.githubusercontent.com/MasuRii/FBScrapeIdeas/main/.github/assets/logo.png" width="50" alt="Project Logo">
 
-A CLI-driven application designed to scrape posts from a specified university Facebook group using Selenium and user-provided credentials. It then leverages Google's Gemini 2.0 Flash for AI-powered categorization of these posts, storing the structured insights in a local SQLite database. This tool aims to help users identify potential capstone/thesis ideas, student problems, or other valuable insights from group discussions.
+[![Python Version][python-shield]][python-url]
+[![License][license-shield]][license-url]
+[![Issues][issues-shield]][issues-url]
+[![Forks][forks-shield]][forks-url]
+[![Stars][stars-shield]][stars-url]
+[![Contributors][contributors-shield]][contributors-url]
 
-## Overview
+A CLI-driven application to scrape and analyze Facebook group posts for insights using Selenium and Google Gemini AI.
 
-This tool automates the process of gathering and analyzing posts from university-specific Facebook groups. By handling authenticated access and utilizing advanced AI for categorization, it provides an efficient way to extract meaningful information from online student communities.
+This tool helps users identify potential capstone/thesis ideas, student problems, or other valuable insights from university Facebook group discussions by automating data collection and AI-powered categorization.
 
-### Problem Statement
+---
 
-Manually sifting through numerous Facebook group posts, especially those requiring login, to find relevant ideas, problems, or trends is time-consuming and inefficient. Potential valuable insights for academic projects or understanding student needs can be easily missed.
+## 📖 Table of Contents
 
-### Target Audience
+- [University Group Insights Platform ](#university-group-insights-platform-)
+  - [📖 Table of Contents](#-table-of-contents)
+  - [✨ Features](#-features)
+  - [🛠️ Tech Stack](#️-tech-stack)
+  - [📋 Prerequisites](#-prerequisites)
+  - [🚀 Getting Started](#-getting-started)
+    - [Installation](#installation)
+    - [Configuration](#configuration)
+  - [⚙️ Usage](#️-usage)
+  - [📂 Project Structure](#-project-structure)
+  - [🤝 Contributing](#-contributing)
+  - [📜 License](#-license)
+  - [📞 Contact](#-contact)
+  - [📚 Full Documentation](#-full-documentation)
 
-Primarily students looking for capstone/thesis ideas, researchers, or university faculty/staff interested in understanding student concerns and interests within their academic community.
+---
 
-### Value Proposition
+## ✨ Features
 
-Automates the discovery and categorization of student-generated ideas and problems from a university Facebook group, including those requiring authenticated access. It saves time and surfaces valuable insights for academic and research purposes by leveraging advanced AI (Gemini 2.0 Flash) for efficient, structured processing.
+*   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts from private or public groups.
+*   **🤖 AI-Powered Post Categorization:** Leverages Google's Gemini Flash model for intelligent post analysis and categorization.
+*   **💾 Local Database Storage:** Stores scraped data and AI insights in a local SQLite database.
+*   **💻 Command-Line Interface (CLI):** Provides easy-to-use commands for scraping, AI processing, and data viewing.
 
-### Goals & Objectives
+For a detailed list of features and project goals, please see the [Full Project Details](docs/PROJECT_DETAILS.md#core-features).
 
-*   Successfully scrape relevant posts (content, URL, timestamp) from the target Facebook group using Selenium and user-provided credentials.
-*   Accurately categorize posts using Google's Gemini 2.0 Flash based on predefined themes (e.g., "problem statement," "project idea"), utilizing structured JSON output.
-*   Efficiently process posts by batching them for the Gemini API.
-*   Store scraped and categorized posts in a structured SQLite database for easy querying and review via the CLI.
-*   Provide clear CLI commands to trigger scraping, AI processing, and viewing of posts.
+---
 
-## Core Features
+## 🛠️ Tech Stack
 
-*   **Authenticated Facebook Group Scraping:** Utilizes Selenium to automate browser interaction, enabling login to Facebook with user-provided credentials to access and scrape posts (content, URL, timestamp) from specified private or public groups.
-*   **AI-Powered Post Categorization:** Integrates with Google's Gemini 2.0 Flash model. Scraped post text is analyzed and categorized into predefined themes (e.g., "Problem Statement," "Project Idea"). This process uses batching for API efficiency and expects structured JSON output from the AI.
-*   **Local Database Storage:** Scraped posts and their corresponding AI-generated categorizations are stored persistently in a local SQLite database (`insights.db`), allowing for offline access and analysis.
-*   **Command-Line Interface (CLI):** Offers a user-friendly CLI for interacting with the application, including commands to initiate scraping, trigger AI processing of new posts, and view stored/categorized data with filtering options.
-
-## Technology Stack
-
-*   **Programming Language:** Python (3.9+)
-*   **Web Scraping / Browser Automation:**
-    *   `Selenium`: For browser automation and interaction with Facebook.
-    *   `webdriver-manager`: For automatic management of browser drivers (e.g., ChromeDriver).
-    *   `BeautifulSoup4`: For parsing HTML content extracted by Selenium.
+*   **Language:** ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+*   **Web Scraping:**
+    *   ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=for-the-badge&logo=selenium&logoColor=white)
+    *   `webdriver-manager`
+    *   `BeautifulSoup4`
 *   **AI & Machine Learning:**
-    *   `google-generativeai`: Official Google AI SDK for Python to interact with Gemini models.
-    *   **AI Model:** Google Gemini 2.0 Flash.
+    *   `google-generativeai` (Google Gemini Flash)
 *   **Database:**
-    *   `sqlite3`: Python's built-in module for SQLite database interaction.
-*   **CLI Development:**
-    *   `argparse` (or `click`, as implemented): For creating the command-line interface.
-*   **Configuration & Utilities:**
-    *   `python-dotenv`: For managing environment variables (like API keys).
-    *   `getpass`: For secure input of passwords via the CLI.
+    *   ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
+*   **CLI:**
+    *   `click` (or `argparse`)
+*   **Utilities:**
+    *   `python-dotenv`
+    *   `getpass`
 
-## Prerequisites
+For more details, visit the [Technology Stack section in our documentation](docs/PROJECT_DETAILS.md#technology-stack).
 
-Before you begin, ensure you have the following installed on your system:
+---
 
-*   **Python:** Version 3.9 or higher.
-*   **Git:** For cloning the repository.
-*   **Web Browser:** A modern web browser supported by Selenium (e.g., Google Chrome, Mozilla Firefox).
-*   **Google Cloud Project & Gemini API Key:** You will need an active Google Cloud project with the Generative Language API enabled and a valid API key for Gemini. You can obtain this from the [Google AI Studio](https://aistudio.google.com/) or Google Cloud Console.
+## 📋 Prerequisites
 
-## Setup & Installation
+Before you begin, ensure you have the following:
+*   Python 3.9+
+*   Git
+*   A modern Web Browser (e.g., Chrome, Firefox)
+*   Google Cloud Project & Gemini API Key
 
-1.  **Clone the Repository:**
-    Open your terminal or command prompt and run:
+Detailed prerequisites can be found [here](docs/PROJECT_DETAILS.md#prerequisites).
+
+---
+
+## 🚀 Getting Started
+
+### Installation
+
+1.  **Clone the repository:**
     ```bash
     git clone https://github.com/MasuRii/FBScrapeIdeas.git
+    cd FBScrapeIdeas
     ```
-
-2.  **Navigate to the Project Directory:**
+2.  **Create and activate a virtual environment:**
     ```bash
-    cd FBScrapeIdeas 
+    # For Linux/macOS
+    python3 -m venv venv
+    source venv/bin/activate
+    
+    # For Windows (Command Prompt)
+    python -m venv venv
+    venv\Scripts\activate.bat
     ```
-    *(Adjust `FBScrapeIdeas` if your local directory name is different)*
-
-3.  **Create and Activate a Virtual Environment:**
-    It's highly recommended to use a virtual environment to manage project dependencies.
-
-    *   **Linux/macOS (bash/zsh):**
-        ```bash
-        python3 -m venv venv
-        source venv/bin/activate
-        ```
-
-    *   **Windows (Command Prompt):**
-        ```bash
-        python -m venv venv
-        venv\Scripts\activate.bat
-        ```
-
-    *   **Windows (PowerShell):**
-        ```powershell
-        python -m venv venv
-        .\venv\Scripts\Activate.ps1 
-        ```
-        *(You might need to set execution policy: `Set-ExecutionPolicy Unrestricted -Scope Process`)*
-
-4.  **Install Dependencies:**
-    With your virtual environment activated, install the required Python packages:
+3.  **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
-5.  **Set up Environment Variables:**
-    This project uses a `.env` file to store sensitive information like API keys and Facebook credentials.
-    *   Create a file named `.env` in the root of the project directory.
-    *   Add your Google Gemini API key and Facebook credentials to this file. You can use the `.env.example` file (if provided in the repository) as a template:
-        ```dotenv
-        # .env
-        GOOGLE_API_KEY=YOUR_GEMINI_API_KEY_HERE
-        FB_USER=YOUR_FACEBOOK_EMAIL_OR_USERNAME
-        FB_PASS=YOUR_FACEBOOK_PASSWORD
-        ```
-    **Important:** The `.env` file should be listed in your `.gitignore` file to prevent accidental commitment of sensitive credentials.
+### Configuration
 
-6.  **WebDriver Setup:**
-    The `webdriver-manager` library, included in `requirements.txt`, will attempt to automatically download and manage the correct WebDriver for your installed browser (e.g., ChromeDriver for Chrome) the first time the scraper is run. Ensure you have the browser itself installed.
+1.  **Set up Environment Variables:**
+    Create a `.env` file in the project root:
+    ```dotenv
+    # .env
+    GOOGLE_API_KEY=YOUR_GEMINI_API_KEY_HERE
+    FB_USER=YOUR_FACEBOOK_EMAIL_OR_USERNAME
+    FB_PASS=YOUR_FACEBOOK_PASSWORD
+    ```
+    (Use `.env.example` as a template)
 
-## Configuration
+2.  **WebDriver Setup:**
+    `webdriver-manager` will handle this automatically on the first run.
 
-Key configurations for the application are managed as follows:
+For detailed setup and configuration instructions, please refer to the [Setup & Installation Guide](docs/PROJECT_DETAILS.md#setup--installation) and [Configuration Details](docs/PROJECT_DETAILS.md#configuration).
 
-*   **Google Gemini API Key:** Set in the `.env` file as `GOOGLE_API_KEY`.
-*   **Facebook Credentials:** Set in the `.env` file as `FB_USER` and `FB_PASS`. These are read at runtime for scraping and are **not** stored persistently by the application beyond the current session.
-    *Alternatively, if `.env` entries are not found, the `scrape` command will securely prompt for Facebook credentials using `getpass`.*
-*   **AI Categories & Prompt:**
-    *   The predefined categories for AI classification are defined within the `response_schema` used when calling the Gemini API, typically found in `ai/gemini_service.py` or a related schema definition file (e.g., `ai/gemini_schema.json`).
-    *   The main prompt instructing the Gemini model is also located within `ai/gemini_service.py`.
-    Developers can inspect or modify these directly in the code for custom behavior.
-*   **Scraping Targets:**
-    *   **Facebook Group URL:** Provided as a command-line argument (`--group-url`) to the `scrape` command.
-    *   **Number of Posts:** Optionally specified via the `--num-posts` argument to the `scrape` command.
+---
 
-## Usage (CLI Commands)
+## ⚙️ Usage
 
-The application is operated through its command-line interface. The general syntax is:
+The application is run via the CLI:
 
 ```bash
 python main.py <command> [options]
 ```
 
-### `scrape`
+**Available Commands:**
 
-*   **Purpose:** Initiates the process of scraping posts from a specified Facebook group.
-*   **Syntax:**
+*   `scrape`: Scrapes posts from a Facebook group.
     ```bash
-    python main.py scrape --group-url <FACEBOOK_GROUP_URL> [--num-posts <NUMBER>] [--headless]
+    python main.py scrape --group-url "GROUP_URL" [--num-posts 50] [--headless]
     ```
-*   **Options:**
-    *   `--group-url <URL>`: (Required) The full URL of the Facebook group to scrape.
-    *   `--num-posts <NUMBER>`: (Optional) The maximum number of posts to attempt to scrape. Defaults to a predefined value if not specified.
-    *   `--headless`: (Optional) Runs the Selenium-controlled browser in headless mode (without a visible UI). Useful for servers or automated runs.
-*   **Behavior:**
-    *   Reads Facebook credentials from the `.env` file. If not found, it will securely prompt for your Facebook email/username and password.
-    *   Launches a browser, logs into Facebook, navigates to the group, and scrapes posts.
-    *   Saves scraped data to the `insights.db` SQLite database.
-*   **Example:**
-    ```bash
-    python main.py scrape --group-url "https://www.facebook.com/groups/your_target_group_id" --num-posts 50 --headless
-    ```
-
-### `process-ai`
-
-*   **Purpose:** Processes posts stored in the database that have not yet been categorized by the AI.
-*   **Syntax:**
+*   `process-ai`: Processes scraped posts with Gemini AI.
     ```bash
     python main.py process-ai
     ```
-*   **Behavior:**
-    *   Fetches posts from `insights.db` where `is_processed_by_ai` is `0` and `post_content_raw` is not null.
-    *   Sends these posts in batches to the Google Gemini 2.0 Flash API for categorization using the configured prompt and schema.
-    *   Updates the database records with the AI-generated category, summary, keywords, etc.
-*   **Example:**
+*   `view`: Views categorized posts from the database.
     ```bash
-    python main.py process-ai
+    python main.py view [--category "Project Idea"] [--limit 10]
     ```
 
-### `view`
+For comprehensive command usage and examples, see the [Usage Guide](docs/PROJECT_DETAILS.md#usage-cli-commands).
 
-*   **Purpose:** Displays categorized posts from the SQLite database in the console.
-*   **Syntax:**
-    ```bash
-    python main.py view [--category <CATEGORY_NAME>] [--limit <NUMBER>]
-    ```
-*   **Options:**
-    *   `--category <CATEGORY_NAME>`: (Optional) Filters the displayed posts to only show those matching the specified category (e.g., "Project Idea").
-    *   `--limit <NUMBER>`: (Optional) Limits the number of posts displayed.
-*   **Example:**
-    ```bash
-    # View all categorized posts (default limit may apply)
-    python main.py view
+---
 
-    # View up to 10 posts categorized as 'Project Idea'
-    python main.py view --category "Project Idea" --limit 10
-    ```
-
-### Getting Help
-
-To see a list of all commands or get help for a specific command, use the `--help` flag:
-
-```bash
-python main.py --help
-python main.py scrape --help
-python main.py process-ai --help
-python main.py view --help
-```
-
-## Project Structure
-
-A brief overview of the project's directory layout:
+## 📂 Project Structure
 
 ```
 FBScrapeIdeas/
-├── .env                # Local environment variables (API keys, credentials - Git ignored)
-├── .env.example        # Example template for .env file
-├── .gitignore          # Specifies intentionally untracked files that Git should ignore
-├── README.md           # This documentation file
-├── requirements.txt    # Python package dependencies
-├── main.py             # CLI entry point and command definitions
-├── ai/
-│   ├── __init__.py
-│   ├── gemini_service.py # Logic for interacting with Gemini API, batching, prompting
-│   └── (gemini_schema.json) # Optional: If schema is in a separate JSON file
-├── database/
-│   ├── __init__.py
-│   ├── crud.py           # Functions for database Create, Read, Update operations
-│   └── db_setup.py       # Script to initialize database schema
-├── scraper/
-│   ├── __init__.py
-│   ├── facebook_scraper.py # Core Selenium logic for login and post scraping
-│   └── (webdriver_setup.py) # Potentially separate WebDriver initialization logic
-└── insights.db         # SQLite database file (created on first run/setup)
+├── .env                # Local environment variables (Git ignored)
+├── .gitignore          # Files ignored by Git
+├── README.md           # This file
+├── requirements.txt    # Dependencies
+├── main.py             # CLI entry point
+├── ai/                 # AI related modules
+├── database/           # Database setup and CRUD operations
+├── scraper/            # Web scraping logic
+├── docs/               # Detailed documentation
+│   └── PROJECT_DETAILS.md
+└── insights.db         # SQLite database (created on run)
 ```
+A more detailed project structure can be found [here](docs/PROJECT_DETAILS.md#project-structure).
 
-## Ethical Considerations & Limitations
+---
 
-*   **Ethical Use & Terms of Service:** Users are solely responsible for ensuring their use of this tool complies with Facebook's Terms of Service, the rules of any specific group being scraped, and all applicable data privacy laws and regulations. This tool is intended for personal research or academic purposes.
-*   **Credential Security:**
-    *   Facebook credentials provided in the `.env` file or via CLI prompt are used for the duration of the scraping session only and are **not** stored persistently by the application in any recoverable format after the session ends.
-    *   However, using personal credentials with automated tools carries inherent security risks. Exercise caution and consider the security implications.
-*   **Facebook UI Changes:** Facebook frequently updates its website structure. These changes can break the Selenium selectors used for scraping, requiring code updates to maintain functionality. This is an ongoing maintenance consideration.
-*   **Two-Factor Authentication (2FA):** If 2FA is enabled on the Facebook account used for scraping, manual intervention (e.g., entering a code) may be required during the automated login process. The current MVP does not fully automate 2FA.
-*   **`posted_at` Timestamp Accuracy:** Observations indicate that the parsing of relative Facebook timestamps (e.g., "2 hours ago") might occasionally result in dates set to the current year but with future month/day or default to midnight. If high precision for post timestamps is critical, this date parsing logic may require further refinement.
-*   **Rate Limiting & Anti-Scraping:** Extensive or rapid scraping could trigger Facebook's anti-scraping measures or rate limits, potentially leading to temporary blocks or CAPTCHAs. The tool implements basic waits but does not include advanced anti-detection techniques.
+## 🤝 Contributing
 
-## Future Enhancements (Roadmap)
+Contributions are welcome! Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
-Potential areas for future development include:
+---
 
-*   Support for scraping and managing multiple Facebook groups.
-*   User-configurable AI categories and more dynamic prompt management.
-*   Development of a web-based user interface (UI) for easier interaction.
-*   Implementation of scheduled/automated scraping and AI processing tasks.
-*   Advanced filtering, searching, and analytical capabilities within the application.
-*   Improved accuracy and robustness of `posted_at` date/time parsing.
-*   More sophisticated error handling and recovery for scraping interruptions.
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 📞 Contact
+
+Your Name / Project Link – [mathlee.biacolo@cit.edu](mailto:mathlee.biacolo@cit.edu)
+
+Project Link: [https://github.com/MasuRii/FBScrapeIdeas](https://github.com/MasuRii/FBScrapeIdeas)
+
+---
+
+## 📚 Full Documentation
+
+For a comprehensive understanding of the project, including its architecture, detailed setup, advanced usage, and ethical considerations, please refer to the [**Full Project Documentation**](docs/PROJECT_DETAILS.md).
+
+<!-- Shields.io links -->
+[python-shield]: https://img.shields.io/badge/Python-3.9%2B-blue.svg
+[python-url]: https://www.python.org/downloads/
+[license-shield]: https://img.shields.io/github/license/MasuRii/FBScrapeIdeas
+[license-url]: https://github.com/MasuRii/FBScrapeIdeas/blob/main/LICENSE
+[issues-shield]: https://img.shields.io/github/issues/MasuRii/FBScrapeIdeas
+[issues-url]: https://github.com/MasuRii/FBScrapeIdeas/issues
+[forks-shield]: https://img.shields.io/github/forks/MasuRii/FBScrapeIdeas
+[forks-url]: https://github.com/MasuRii/FBScrapeIdeas/network/members
+[stars-shield]: https://img.shields.io/github/stars/MasuRii/FBScrapeIdeas
+[stars-url]: https://github.com/MasuRii/FBScrapeIdeas/stargazers
+[contributors-shield]: https://img.shields.io/github/contributors/MasuRii/FBScrapeIdeas
+[contributors-url]: https://github.com/MasuRii/FBScrapeIdeas/graphs/contributors
