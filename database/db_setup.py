@@ -21,6 +21,9 @@ def init_db(db_name='insights.db'):
                 facebook_post_id TEXT UNIQUE,
                 post_url TEXT UNIQUE,
                 post_content_raw TEXT,
+                post_author_name TEXT,
+                post_author_profile_pic_url TEXT,
+                post_image_url TEXT,
                 posted_at TIMESTAMP,
                 scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 ai_category TEXT,
@@ -32,6 +35,19 @@ def init_db(db_name='insights.db'):
                 ai_raw_response TEXT, -- Storing as JSON string
                 is_processed_by_ai INTEGER DEFAULT 0, -- 0 for False, 1 for True
                 last_ai_processing_at TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS Comments (
+                comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                internal_post_id INTEGER,
+                commenter_name TEXT,
+                commenter_profile_pic_url TEXT,
+                comment_text TEXT,
+                comment_facebook_id TEXT UNIQUE,
+                comment_scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (internal_post_id) REFERENCES Posts(internal_post_id)
             )
         ''')
 
