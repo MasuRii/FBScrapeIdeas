@@ -5,7 +5,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group, is_facebook_session_valid
-from database.crud import get_db_connection, add_scraped_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts
+from database.crud import get_db_connection, add_scraped_post, add_comments_for_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts
 from ai.gemini_service import create_post_batches, categorize_posts_batch
 from config import get_facebook_credentials
 from database.db_setup import init_db
@@ -63,11 +63,16 @@ def main():
                     
                     added_count = 0
                     if scraped_posts:
-                        logging.info(f"Attempting to add {len(scraped_posts)} scraped posts to the database.")
+                        logging.info(f"Attempting to add {len(scraped_posts)} scraped posts and their comments to the database.")
                         for post in scraped_posts:
-                            if add_scraped_post(conn, post):
+                            internal_post_id = add_scraped_post(conn, post)
+                            if internal_post_id:
                                 added_count += 1
-                        logging.info(f"Successfully added {added_count} new posts to the database.")
+                                if post.get('comments'):
+                                    add_comments_for_post(conn, internal_post_id, post['comments'])
+                            else:
+                                logging.warning(f"Failed to add post {post.get('post_url')}. Skipping comments for this post.")
+                        logging.info(f"Successfully added {added_count} new posts (and their comments) to the database.")
                     else:
                          logging.info("No posts were scraped.")
                 else:

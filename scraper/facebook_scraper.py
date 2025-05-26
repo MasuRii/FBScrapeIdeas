@@ -128,6 +128,34 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
     scraped_posts: List[Dict[str, Any]] = []
     processed_post_urls: set[str] = set()
     processed_post_ids: set[str] = set()
+    
+    POST_CONTAINER_SELECTORS = 'div.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z, div[role="article"]'
+    
+    AUTHOR_PIC_SVG_IMG_SELECTOR = 'div:first-child svg image'
+    AUTHOR_PIC_IMG_SELECTOR = 'div:first-child img[alt*="profile picture"], div:first-child img[data-imgperflogname*="profile"]'
+    SPECIFIC_AUTHOR_PIC_SELECTOR = 'div[role="button"] svg image'
+
+    AUTHOR_NAME_SELECTORS = 'h2 strong, h2 a[role="link"] strong, h3 strong, h3 a[role="link"] strong, a[aria-label][href*="/user/"] > strong, a[aria-label][href*="/profile.php"] > strong'
+    ANON_AUTHOR_NAME_SELECTOR = 'h2[id^="«r"] strong object div'
+    GENERAL_AUTHOR_NAME_SELECTOR = 'a[href*="/groups/"][href*="/user/"] span, a[href*="/profile.php"] span, span > strong > a[role="link"]'
+
+    POST_TEXT_CONTAINER_SELECTORS = 'div[data-ad-rendering-role="story_message"], div[data-ad-preview="message"], div[data-ad-comet-preview="message"]'
+    GENERIC_TEXT_DIV_SELECTOR = 'div[dir="auto"]:not([class*=" "]):not(:has(button)):not(:has(a[role="button"]))'
+
+    POST_IMAGE_SELECTORS = 'img.x168nmei, div[data-imgperflogname="MediaGridPhoto"] img, div[style*="background-image"]'
+
+    COMMENT_CONTAINER_SELECTORS = 'div[aria-label*="Comment by"], ul > li div[role="article"]'
+
+    COMMENTER_PIC_SVG_IMG_SELECTOR = 'svg image'
+    COMMENTER_PIC_IMG_SELECTOR = 'img[alt*="profile picture"], img[data-imgperflogname*="profile"]'
+    SPECIFIC_COMMENTER_PIC_SELECTOR = 'a[role="link"] svg image'
+
+    COMMENTER_NAME_SELECTORS = 'a[href*="/user/"] span, a[href*="/profile.php"] span, span > a[role="link"] > span > span[dir="auto"]'
+    GENERAL_COMMENTER_NAME_SELECTOR = 'div[role="button"] > strong > span, a[aria-hidden="false"][role="link"]'
+
+    COMMENT_TEXT_SELECTORS = 'div[data-ad-preview="message"] > span, div[dir="auto"][style="text-align: start;"]'
+    COMMENT_TEXT_CONTAINER_FALLBACK_SELECTORS = '.xmjcpbm.xtq9sad + div, .xv55zj0 + div'
+    ACTUAL_COMMENT_TEXT_FALLBACK_SELECTORS = 'div[dir="auto"], span[dir="auto"]'
 
     logging.info(f"Navigating to group: {group_url}")
     try:
@@ -197,12 +225,7 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                     logging.debug(f"Error checking for overlay with selector {selector}: {selector_e}")
 
 
-            potential_post_elements = driver.find_elements(By.XPATH,
-                "//div[@role='feed']/div/div/div[starts-with(@class, 'x')] | "
-                "//div[@role='article'] | "
-                "//div[contains(@data-testid, 'post_story')] | "
-                "//div[contains(@class, 'du4w35lb') and .//a[contains(@href, '/posts/')]]"
-            )
+            potential_post_elements = driver.find_elements(By.CSS_SELECTOR, POST_CONTAINER_SELECTORS)
 
             logging.debug(f"Found {len(potential_post_elements)} potential post elements on the page.")
 
@@ -212,6 +235,10 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                     post_id = None
                     post_text = None
                     posted_at = None
+                    post_author_name = None
+                    post_author_profile_pic_url = None
+                    post_image_url = None
+                    comments_data = []
                     is_valid_post = False
 
                     try:
@@ -297,30 +324,145 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                          logging.debug(f"Could not determine post URL or ID. Skipping element from scroll attempt {scroll_attempt}.")
                          continue
 
+                    try:
+                        author_pic_svg_img = post_element.find_elements(By.CSS_SELECTOR, AUTHOR_PIC_SVG_IMG_SELECTOR)
+                        if author_pic_svg_img:
+                            post_author_profile_pic_url = author_pic_svg_img[0].get_attribute('xlink:href')
+                        else:
+                            author_pic_img = post_element.find_elements(By.CSS_SELECTOR, AUTHOR_PIC_IMG_SELECTOR)
+                            if author_pic_img:
+                                post_author_profile_pic_url = author_pic_img[0].get_attribute('src')
+                            else:
+                                specific_author_pic = post_element.find_elements(By.CSS_SELECTOR, SPECIFIC_AUTHOR_PIC_SELECTOR)
+                                if specific_author_pic:
+                                    post_author_profile_pic_url = specific_author_pic[0].get_attribute('xlink:href')
+                        logging.debug(f"Extracted author profile pic: {post_author_profile_pic_url}")
+                    except Exception as e:
+                        logging.warning(f"Could not extract author profile picture for post {post_id}: {e}")
 
                     try:
-                         text_element = post_element.find_element(By.XPATH, \
-                            ".//div[@data-testid='post-content'] | " \
-                            ".//div[@dir='auto'] | " \
-                            ".//div[contains(@class, 'kvgmc6g5')] | " \
-                            ".//div[contains(@class, 'ecm0bbzt')] | " \
-                            ".//span[contains(@style, '--fontSize: 14px;') and contains(@style, '--lineHeight: 18.8711px;')]//div[@dir='auto']"
-                         )
-                         post_text = text_element.text.strip()
-                         if len(post_text) < 20 and not any(kw in post_text.lower() for kw in ['post', 'share', 'comment']):
-                             logging.warning(f"Post text seems too short ({len(post_text)} chars), may not be main content. ID: {post_id}, URL: {post_url}")
-                             pass
-
-                    except NoSuchElementException:
-                         logging.warning(f"Could not find standard text element for post (ID: {post_id}, URL: {post_url}). Text will be N/A.")
-                         logging.debug(f"HTML of post element where text extraction failed for post (ID: {post_id}, URL: {post_url}): {post_element.get_attribute('outerHTML')}")
-                         post_text = "N/A"
-
-                    logging.info(f"Extracted post_text for {post_id}: '{post_text}'")
+                        author_name_el = post_element.find_elements(By.CSS_SELECTOR, AUTHOR_NAME_SELECTORS)
+                        if author_name_el:
+                            post_author_name = author_name_el[0].text.strip()
+                        else:
+                            anon_author_name_el = post_element.find_elements(By.CSS_SELECTOR, ANON_AUTHOR_NAME_SELECTOR)
+                            if anon_author_name_el:
+                                post_author_name = anon_author_name_el[0].text.strip()
+                            else:
+                                general_author_name_el = post_element.find_elements(By.CSS_SELECTOR, GENERAL_AUTHOR_NAME_SELECTOR)
+                                if general_author_name_el:
+                                    post_author_name = general_author_name_el[0].text.strip()
+                        logging.debug(f"Extracted author name: {post_author_name}")
+                    except Exception as e:
+                        logging.warning(f"Could not extract author name for post {post_id}: {e}")
 
                     try:
-                         timestamp_element = None
-                         timestamp_selectors = [
+                        post_text = None
+                        post_text_container = post_element.find_elements(By.CSS_SELECTOR, POST_TEXT_CONTAINER_SELECTORS)
+                        if post_text_container:
+                            text_parts = []
+                            for child in post_text_container[0].find_elements(By.CSS_SELECTOR, '> div, > span'):
+                                if child.text and child.text.strip():
+                                    if not child.find_elements(By.CSS_SELECTOR, 'div[role="button"], a[role="button"]'):
+                                        text_parts.append(child.text.strip())
+                            if text_parts:
+                                post_text = '\n'.join(text_parts)
+                            else:
+                                post_text = post_text_container[0].text.strip()
+
+                        if not post_text:
+                            try:
+                                generic_text_div = post_element.find_element(By.CSS_SELECTOR, GENERIC_TEXT_DIV_SELECTOR)
+                                post_text = generic_text_div.text.strip()
+                            except NoSuchElementException:
+                                pass
+
+                        if not post_text:
+                            try:
+                                post_text = post_element.text.strip()
+                                post_text = ' '.join(post_text.split())
+                            except Exception:
+                                post_text = "N/A"
+
+                        logging.info(f"Extracted post_text for {post_id}: '{post_text}'")
+                    except Exception as e:
+                        logging.warning(f"Could not find standard text element for post (ID: {post_id}, URL: {post_url}). Text will be N/A. Error: {e}")
+                        logging.debug(f"HTML of post element where text extraction failed for post (ID: {post_id}, URL: {post_url}): {post_element.get_attribute('outerHTML')}")
+                        post_text = "N/A"
+
+                    try:
+                        post_image_el = post_element.find_elements(By.CSS_SELECTOR, POST_IMAGE_SELECTORS)
+                        if post_image_el:
+                            if post_image_el[0].tag_name == 'img':
+                                post_image_url = post_image_el[0].get_attribute('src')
+                            elif post_image_el[0].tag_name == 'div' and post_image_el[0].value_of_css_property('background-image'):
+                                bg_image = post_image_el[0].value_of_css_property('background-image')
+                                if 'url("' in bg_image and '")' in bg_image:
+                                    post_image_url = bg_image[bg_image.find('("') + 2 : bg_image.rfind('")')]
+                        logging.debug(f"Extracted post image URL: {post_image_url}")
+                    except Exception as e:
+                        logging.warning(f"Could not extract post image for post {post_id}: {e}")
+
+                    try:
+                        comment_elements = post_element.find_elements(By.CSS_SELECTOR, COMMENT_CONTAINER_SELECTORS)
+                        for comment_el in comment_elements:
+                            comment = {
+                                'commenterProfilePic': None,
+                                'commenterName': None,
+                                'commentText': None,
+                                'commentFacebookId': None
+                            }
+
+                            try:
+                                commenter_pic_svg_img = comment_el.find_elements(By.CSS_SELECTOR, COMMENTER_PIC_SVG_IMG_SELECTOR)
+                                if commenter_pic_svg_img:
+                                    comment['commenterProfilePic'] = commenter_pic_svg_img[0].get_attribute('xlink:href')
+                                else:
+                                    commenter_pic_img = comment_el.find_elements(By.CSS_SELECTOR, COMMENTER_PIC_IMG_SELECTOR)
+                                    if commenter_pic_img:
+                                        comment['commenterProfilePic'] = commenter_pic_img[0].get_attribute('src')
+                                    else:
+                                        specific_commenter_pic = comment_el.find_elements(By.CSS_SELECTOR, SPECIFIC_COMMENTER_PIC_SELECTOR)
+                                        if specific_commenter_pic:
+                                            comment['commenterProfilePic'] = specific_commenter_pic[0].get_attribute('xlink:href')
+                            except Exception as e:
+                                logging.debug(f"Could not extract commenter profile pic: {e}")
+
+                            try:
+                                commenter_name_el = comment_el.find_elements(By.CSS_SELECTOR, COMMENTER_NAME_SELECTORS)
+                                if commenter_name_el:
+                                    comment['commenterName'] = commenter_name_el[0].text.strip()
+                                else:
+                                    general_commenter_name_el = comment_el.find_elements(By.CSS_SELECTOR, GENERAL_COMMENTER_NAME_SELECTOR)
+                                    if general_commenter_name_el:
+                                        comment['commenterName'] = general_commenter_name_el[0].text.strip()
+                            except Exception as e:
+                                logging.debug(f"Could not extract commenter name: {e}")
+
+                            try:
+                                comment_text_el = comment_el.find_elements(By.CSS_SELECTOR, COMMENT_TEXT_SELECTORS)
+                                if comment_text_el:
+                                    comment['commentText'] = comment_text_el[0].text.strip()
+                                else:
+                                    comment_text_container = comment_el.find_elements(By.CSS_SELECTOR, COMMENT_TEXT_CONTAINER_FALLBACK_SELECTORS)
+                                    if comment_text_container:
+                                        actual_text_el = comment_text_container[0].find_elements(By.CSS_SELECTOR, ACTUAL_COMMENT_TEXT_FALLBACK_SELECTORS)
+                                        if actual_text_el:
+                                            comment['commentText'] = actual_text_el[0].text.strip()
+                                        else:
+                                            comment['commentText'] = comment_text_container[0].text.strip()
+                            except Exception as e:
+                                logging.debug(f"Could not extract comment text: {e}")
+
+                            if comment['commenterName'] or comment['commentText']:
+                                comments_data.append(comment)
+                        logging.debug(f"Extracted {len(comments_data)} comments for post {post_id}.")
+                    except Exception as e:
+                        logging.warning(f"Error extracting comments for post {post_id}: {e}")
+
+                    try:
+                        timestamp_element = None
+                        timestamp_selectors = [
                             ".//abbr",
                             ".//a[contains(@href, '/posts/')]//abbr",
                             ".//a[contains(@href, '/videos/')]//abbr",
@@ -328,68 +470,67 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                             ".//li[./span/div/a[contains(@href, '/posts/') or contains(@href, '/videos/') or contains(@href, '/photos/')]]//a[not(contains(@href, '/user/')) and string-length(text()) > 0]",
                             ".//a[contains(@href, '/groups/') and (contains(@href, '/posts/') or contains(@href, '/videos/') or contains(@href, '/photos/')) and string-length(text()) > 0 and not(contains(@href, '/user/'))]",
                             ".//div[@data-testid='post-header']//span/span/a/span/span"
-                         ]
+                        ]
 
-                         for selector in timestamp_selectors:
+                        for selector in timestamp_selectors:
                             try:
                                 timestamp_element = post_element.find_element(By.XPATH, selector)
                                 if timestamp_element and (timestamp_element.text.strip() or timestamp_element.get_attribute('title')):
-                                     logging.debug(f"Found timestamp element using selector: {selector}")
-                                     break
+                                    logging.debug(f"Found timestamp element using selector: {selector}")
+                                    break
                                 else:
-                                     timestamp_element = None
+                                    timestamp_element = None
                             except NoSuchElementException:
-                                 logging.debug(f"Timestamp selector failed: {selector}")
-                                 continue
+                                logging.debug(f"Timestamp selector failed: {selector}")
+                                continue
 
-                         datetime_str = None
-                         simple_time_text = None
+                        datetime_str = None
+                        simple_time_text = None
 
-                         if timestamp_element:
+                        if timestamp_element:
                             datetime_str = timestamp_element.get_attribute('title')
                             simple_time_text = timestamp_element.text
 
-                         if not datetime_str and not simple_time_text:
-                             try:
-                                 aria_label = post_element.get_attribute('aria-label')
-                                 if aria_label and (' ago' in aria_label or ' at ' in aria_label):
-                                     logging.debug(f"Attempting to extract timestamp from aria-label: {aria_label}")
-                                     time_match = re.search(r'\b(\d+\s+(?:second|minute|hour|day|week|month|year)s? ago|at .*)$', aria_label)
-                                     if time_match:
-                                         simple_time_text = time_match.group(0).strip()
-                                         logging.debug(f"Extracted potential timestamp from aria-label: {simple_time_text}")
+                        if not datetime_str and not simple_time_text:
+                            try:
+                                aria_label = post_element.get_attribute('aria-label')
+                                if aria_label and (' ago' in aria_label or ' at ' in aria_label):
+                                    logging.debug(f"Attempting to extract timestamp from aria-label: {aria_label}")
+                                    time_match = re.search(r'\b(\d+\s+(?:second|minute|hour|day|week|month|year)s? ago|at .*)$', aria_label)
+                                    if time_match:
+                                        simple_time_text = time_match.group(0).strip()
+                                        logging.debug(f"Extracted potential timestamp from aria-label: {simple_time_text}")
 
-                             except Exception as e:
-                                 logging.debug(f"Error extracting timestamp from aria-label: {e}")
-                                 pass
+                            except Exception as e:
+                                logging.debug(f"Error extracting timestamp from aria-label: {e}")
+                                pass
 
-
-                         if datetime_str:
-                             try:
-                                 posted_at = datetime.strptime(datetime_str, "%A, %d %B %Y at %I:%M %p")
-                                 logging.debug(f"Parsed full datetime from title: {posted_at}")
-                             except ValueError:
-                                 logging.warning(f"Could not parse detailed timestamp format '{datetime_str}' for post (ID: {post_id}).")
-                                 if simple_time_text:
-                                     try:
-                                         posted_at = parse(simple_time_text, fuzzy=True)
-                                         logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
-                                     except Exception as parse_e:
-                                         logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
-                                         posted_at = None
-                                 else:
-                                     posted_at = None
-                         elif simple_time_text:
-                              logging.warning(f"Timestamp element found but 'title' attribute is missing for post (ID: {post_id}). Attempting to parse simple text: '{simple_time_text}'")
-                              try:
-                                   posted_at = parse(simple_time_text, fuzzy=True)
-                                   logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
-                              except Exception as parse_e:
-                                  logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
-                                  posted_at = None
-                         else:
-                              logging.debug(f"Timestamp element found but no text or title attribute for post (ID: {post_id}).")
-                              posted_at = None
+                        if datetime_str:
+                            try:
+                                posted_at = datetime.strptime(datetime_str, "%A, %d %B %Y at %I:%M %p")
+                                logging.debug(f"Parsed full datetime from title: {posted_at}")
+                            except ValueError:
+                                logging.warning(f"Could not parse detailed timestamp format '{datetime_str}' for post (ID: {post_id}).")
+                                if simple_time_text:
+                                    try:
+                                        posted_at = parse(simple_time_text, fuzzy=True)
+                                        logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
+                                    except Exception as parse_e:
+                                        logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
+                                        posted_at = None
+                                else:
+                                    posted_at = None
+                        elif simple_time_text:
+                            logging.warning(f"Timestamp element found but 'title' attribute is missing for post (ID: {post_id}). Attempting to parse simple text: '{simple_time_text}'")
+                            try:
+                                posted_at = parse(simple_time_text, fuzzy=True)
+                                logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
+                            except Exception as parse_e:
+                                logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
+                                posted_at = None
+                        else:
+                            logging.debug(f"Timestamp element found but no text or title attribute for post (ID: {post_id}).")
+                            posted_at = None
 
                     except NoSuchElementException:
                         logging.warning(f"Could not find any standard timestamp element for post (ID: {post_id}, URL: {post_url}). Timestamp will be None.")
@@ -404,13 +545,17 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                     if posted_at is None:
                         logging.debug(f"HTML of post element where timestamp extraction failed: {post_element.get_attribute('outerHTML')}")
 
-                    if (post_url or post_id) and (post_text != "N/A" or posted_at is not None):
+                    if (post_url or post_id) and (post_text != "N/A" or posted_at is not None or post_author_name is not None):
                          scraped_posts.append({
                              "facebook_post_id": post_id,
                              "post_url": post_url,
                              "content_text": post_text,
                              "posted_at": posted_at.isoformat() if isinstance(posted_at, datetime) else str(posted_at) if posted_at is not None else None,
-                             "scraped_at": datetime.now().isoformat()
+                             "scraped_at": datetime.now().isoformat(),
+                             "post_author_name": post_author_name,
+                             "post_author_profile_pic_url": post_author_profile_pic_url,
+                             "post_image_url": post_image_url,
+                             "comments": comments_data
                          })
                          extracted_count += 1
                          if post_url: processed_post_urls.add(post_url)
