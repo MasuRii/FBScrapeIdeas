@@ -166,26 +166,6 @@ A more detailed project structure can be found [here](docs/PROJECT_DETAILS.md#pr
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 📞 Contact
-
-Your Name / Project Link – [mathlee.biacolo@cit.edu](mailto:mathlee.biacolo@cit.edu)
-
-Project Link: [https://github.com/MasuRii/FBScrapeIdeas](https://github.com/MasuRii/FBScrapeIdeas)
-
----
-
 ## 📚 Full Documentation
 
 For a comprehensive understanding of the project, including its architecture, detailed setup, advanced usage, and ethical considerations, please refer to the [**Full Project Documentation**](docs/PROJECT_DETAILS.md).
