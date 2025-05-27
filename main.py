@@ -5,7 +5,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group, is_facebook_session_valid
-from database.crud import get_db_connection, add_scraped_post, add_comments_for_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts
+from database.crud import get_db_connection, add_scraped_post, add_comments_for_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts, get_comments_for_post
 from ai.gemini_service import create_post_batches, categorize_posts_batch
 from config import get_facebook_credentials
 from database.db_setup import init_db
@@ -158,6 +158,13 @@ def main():
                 for post in posts:
                     print("-" * 20)
                     print(f"Post URL: {post.get('post_url', 'N/A')}")
+                    print(f"Author: {post.get('post_author_name', 'N/A')}")
+                    if post.get('post_author_profile_pic_url'):
+                        print(f"Author Profile Pic: {post['post_author_profile_pic_url']}")
+                    if post.get('post_image_url'):
+                        print(f"Post Image: {post['post_image_url']}")
+                    print(f"Posted At: {post.get('posted_at', 'N/A')}")
+                    print(f"Content: {post.get('post_content_raw', 'N/A')}")
                     print(f"Category: {post.get('ai_category', 'N/A')}")
                     if post.get('ai_sub_category'):
                         print(f"Sub-category: {post['ai_sub_category']}")
@@ -170,6 +177,17 @@ def main():
                               print(f"Keywords: {post['ai_keywords']}")
                     if post.get('ai_reasoning'):
                          print(f"Reasoning: {post['ai_reasoning']}")
+
+                    comments = get_comments_for_post(conn, post['internal_post_id'])
+                    if comments:
+                        print("  Comments:")
+                        for comment in comments:
+                            print(f"    - Commenter: {comment.get('commenter_name', 'N/A')}")
+                            if comment.get('commenter_profile_pic_url'):
+                                print(f"      Pic: {comment['commenter_profile_pic_url']}")
+                            print(f"      Text: {comment.get('comment_text', 'N/A')}")
+                    else:
+                        print("  No comments.")
 
             except Exception as e:
                 print(f"An error occurred during viewing posts: {e}")
