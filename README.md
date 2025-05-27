@@ -25,9 +25,6 @@ This tool helps users identify potential capstone/thesis ideas, student problems
     - [Configuration](#configuration)
   - [⚙️ Usage](#️-usage)
   - [📂 Project Structure](#-project-structure)
-  - [🤝 Contributing](#-contributing)
-  - [📜 License](#-license)
-  - [📞 Contact](#-contact)
   - [📚 Full Documentation](#-full-documentation)
 
 ---
