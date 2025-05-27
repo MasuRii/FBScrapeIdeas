@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -558,11 +558,41 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                         elif simple_time_text:
                             logging.warning(f"Timestamp element found but 'title' attribute is missing for post (ID: {post_id}). Attempting to parse simple text: '{simple_time_text}'")
                             try:
+                                # First try to parse as absolute date
                                 posted_at = parse(simple_time_text, fuzzy=True)
-                                logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
-                            except Exception as parse_e:
-                                logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
-                                posted_at = None
+                                logging.debug(f"Parsed as absolute date: {posted_at}")
+                            except Exception:
+                                # If absolute parse fails, try relative time parsing
+                                try:
+                                    now = datetime.now()
+                                    relative_match = re.match(r'(\d+)\s*(s|sec|second|seconds|m|min|minute|minutes|h|hr|hour|hours|d|day|days|w|week|weeks|mo|month|months|y|yr|year|years)\s*ago', simple_time_text.lower())
+                                    if relative_match:
+                                        value = int(relative_match.group(1))
+                                        unit = relative_match.group(2)
+                                        
+                                        if unit.startswith('s'):
+                                            delta = timedelta(seconds=value)
+                                        elif unit.startswith('m'):
+                                            delta = timedelta(minutes=value)
+                                        elif unit.startswith('h'):
+                                            delta = timedelta(hours=value)
+                                        elif unit.startswith('d'):
+                                            delta = timedelta(days=value)
+                                        elif unit.startswith('w'):
+                                            delta = timedelta(weeks=value)
+                                        elif unit.startswith('mo'):
+                                            delta = timedelta(days=value*30)
+                                        elif unit.startswith('y'):
+                                            delta = timedelta(days=value*365)
+                                            
+                                        posted_at = now - delta
+                                        logging.debug(f"Parsed relative time '{simple_time_text}' as {posted_at}")
+                                    else:
+                                        posted_at = None
+                                        logging.warning(f"Could not parse relative time format '{simple_time_text}'")
+                                except Exception as parse_e:
+                                    logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' for post (ID: {post_id}): {parse_e}")
+                                    posted_at = None
                         else:
                             logging.debug(f"Timestamp element found but no text or title attribute for post (ID: {post_id}).")
                             posted_at = None
