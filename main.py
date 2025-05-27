@@ -197,39 +197,62 @@ def handle_view_command(category_filter: str = None):
 
 def main():
     init_db()
-    
-    while True:
-        clear_screen()
-        print(ASCII_ART)
-        print("\nUniversity Group Insights Platform Menu:")
-        print("1. Scrape Posts from Facebook Group")
-        print("2. Process Scraped Posts with AI")
-        print("3. View Categorized Posts")
-        print("4. Exit")
-        
-        choice = input("\nEnter your choice: ").strip()
-        
-        if choice == '1':
-            group_url = input("Enter Facebook Group URL: ").strip()
-            num_posts_input = input("Enter number of posts to scrape (default: 20, press Enter for default): ").strip()
-            num_posts = int(num_posts_input) if num_posts_input.isdigit() else 20
-            headless_input = input("Run in headless mode? (yes/no, default: no): ").strip().lower()
-            headless = headless_input == 'yes'
-            handle_scrape_command(group_url, num_posts, headless)
-            input("\nPress Enter to continue...")
-        elif choice == '2':
+
+    parser = argparse.ArgumentParser(description='University Group Insights Platform CLI')
+    subparsers = parser.add_subparsers(dest='command')
+
+    scrape_parser = subparsers.add_parser('scrape', help='Initiate the Facebook scraping process and store results in DB.')
+    scrape_parser.add_argument('--group-url', required=True, help='The URL of the Facebook group to scrape.')
+    scrape_parser.add_argument('--num-posts', type=int, default=20, help='The number of posts to attempt to scrape (default: 20).')
+    scrape_parser.add_argument('--headless', action='store_true', help='Run the browser in headless mode (no GUI).')
+
+    process_ai_parser = subparsers.add_parser('process-ai', help='Fetch unprocessed posts, send them to Gemini for categorization, and update DB.')
+
+    view_parser = subparsers.add_parser('view', help='Display categorized posts from the database.')
+    view_parser.add_argument('--category', help='Optional filter to display posts of a specific category.')
+
+    args = parser.parse_args()
+
+    if args.command:
+        if args.command == 'scrape':
+            handle_scrape_command(args.group_url, args.num_posts, args.headless)
+        elif args.command == 'process-ai':
             handle_process_ai_command()
-            input("\nPress Enter to continue...")
-        elif choice == '3':
-            category_filter = input("Enter category to filter by (optional, press Enter for all): ").strip()
-            handle_view_command(category_filter if category_filter else None)
-            input("\nPress Enter to continue...")
-        elif choice == '4':
-            print("Exiting application. Goodbye!")
-            break
-        else:
-            print("Invalid choice. Please try again.")
-            input("\nPress Enter to continue...")
+        elif args.command == 'view':
+            handle_view_command(args.category)
+    else:
+        while True:
+            clear_screen()
+            print(ASCII_ART)
+            print("\nUniversity Group Insights Platform Menu:")
+            print("1. Scrape Posts from Facebook Group")
+            print("2. Process Scraped Posts with AI")
+            print("3. View Categorized Posts")
+            print("4. Exit")
+            
+            choice = input("\nEnter your choice: ").strip()
+            
+            if choice == '1':
+                group_url = input("Enter Facebook Group URL: ").strip()
+                num_posts_input = input("Enter number of posts to scrape (default: 20, press Enter for default): ").strip()
+                num_posts = int(num_posts_input) if num_posts_input.isdigit() else 20
+                headless_input = input("Run in headless mode? (yes/no, default: no): ").strip().lower()
+                headless = headless_input == 'yes'
+                handle_scrape_command(group_url, num_posts, headless)
+                input("\nPress Enter to continue...")
+            elif choice == '2':
+                handle_process_ai_command()
+                input("\nPress Enter to continue...")
+            elif choice == '3':
+                category_filter = input("Enter category to filter by (optional, press Enter for all): ").strip()
+                handle_view_command(category_filter if category_filter else None)
+                input("\nPress Enter to continue...")
+            elif choice == '4':
+                print("Exiting application. Goodbye!")
+                break
+            else:
+                print("Invalid choice. Please try again.")
+                input("\nPress Enter to continue...")
 
 if __name__ == '__main__':
     main()
