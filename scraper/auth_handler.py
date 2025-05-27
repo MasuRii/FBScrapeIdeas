@@ -17,12 +17,8 @@ def get_facebook_credentials() -> tuple[str, str]:
     return username, password
 
 if __name__ == "__main__":
-    # Example usage for testing
     try:
         fb_user, fb_pass = get_facebook_credentials()
         print("Credentials obtained (not displayed for security).")
-        # In a real scenario, these would be passed to the scraper
-        # print(f"Username: {fb_user}") # Do NOT print sensitive info
-        # print(f"Password: {fb_pass}") # Do NOT print sensitive info
     except ValueError as e:
         print(f"Error: {e}") 
