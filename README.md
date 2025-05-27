@@ -1,4 +1,4 @@
-# University Group Insights Platform
+# FB Scrape Ideas
 
 [![Python Version][python-shield]][python-url]
 [![License][license-shield]][license-url]
