@@ -364,7 +364,7 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                         try:
                             # First wait for button to be present and visible
                             see_more_button = WebDriverWait(driver, 10).until(
-                                EC.presence_of_element_located((By.XPATH, ".//div[@role='button'][contains(., 'See more')] | .//a[contains(., 'See more')]"))
+                                EC.presence_of_element_located((By.XPATH, ".//div[@role='button'][contains(., 'See more') and contains(@class, 'x1i10h5l')] | .//a[contains(., 'See more') and contains(@class, 'x1i10h5l')]"))
                             )
                             
                             # Scroll into view with proper alignment
@@ -372,7 +372,7 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                             
                             # Then wait for button to be clickable
                             see_more_button = WebDriverWait(driver, 10).until(
-                                EC.element_to_be_clickable((By.XPATH, ".//div[@role='button'][contains(., 'See more')] | .//a[contains(., 'See more')]"))
+                                EC.element_to_be_clickable((By.XPATH, ".//div[@role='button'][contains(., 'See more') and contains(@class, 'x1i10h5l')] | .//a[contains(., 'See more') and contains(@class, 'x1i10h5l')]"))
                             )
                             
                             logging.info(f"Attempting to click 'See more' button for post {post_id}.")
