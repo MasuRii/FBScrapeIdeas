@@ -1,4 +1,4 @@
-# University Group Insights Platform <img src="https://raw.githubusercontent.com/MasuRii/FBScrapeIdeas/main/.github/assets/logo.png" width="50" alt="Project Logo">
+# University Group Insights Platform
 
 [![Python Version][python-shield]][python-url]
 [![License][license-shield]][license-url]
