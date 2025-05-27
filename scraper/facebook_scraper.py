@@ -191,31 +191,34 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
 
             time.sleep(scroll_pause_time)
 
-            overlay_selectors = [
+            overlay_container_selectors = [
                 "//div[@data-testid='dialog']",
                 "//div[contains(@role, 'dialog')]",
-                "//div[@aria-label='View site information']",
-                "//button[text()='Not Now']",
-                "//a[@aria-label='Close']"
+                "//div[contains(@aria-label, 'Save your login info')]",
+                "//div[contains(@aria-label, 'Turn on notifications')]",
+                "//div[@aria-label='View site information']"
             ]
 
-            for selector in overlay_selectors:
+            for selector in overlay_container_selectors:
                 try:
                     overlays = driver.find_elements(By.XPATH, selector)
                     for overlay in overlays:
                         if overlay.is_displayed():
                             logging.warning(f"Potential overlay detected with selector: {selector}. Attempting to dismiss.")
                             try:
-                                dismiss_button = overlay.find_element(By.XPATH, ".//button[text()='Not Now'] | .//a[@aria-label='Close'] | .//button[contains(text(), 'Close')] | .//button[contains(text(), 'Dismiss')] | .//button[contains(text(), 'Later')] | .//div[@role='button'][contains(text(), 'Not Now')] | .//div[@role='button'][contains(text(), 'Later')]")
+                                dismiss_button = WebDriverWait(overlay, 5).until(
+                                    EC.element_to_be_clickable((By.XPATH, ".//button[text()='Not Now'] | .//a[@aria-label='Close'] | .//button[contains(text(), 'Close')] | .//button[contains(text(), 'Dismiss')] | .//button[contains(text(), 'Later')] | .//div[@role='button'][contains(text(), 'Not Now')] | .//div[@role='button'][contains(text(), 'Later')]"))
+                                )
                                 if dismiss_button.is_displayed() and dismiss_button.is_enabled():
                                      dismiss_button.click()
                                      logging.info("Overlay dismissed.")
-                                     time.sleep(2)
+                                     WebDriverWait(driver, 10).until(EC.invisibility_of_element_located((By.XPATH, selector)))
+                                     logging.info("Overlay confirmed dismissed.")
                                      break
                                 else:
                                     logging.debug("Found overlay, but dismiss button not visible or enabled.")
-                            except NoSuchElementException:
-                                logging.debug("No standard dismiss button found within overlay. Skipping dismissal for this overlay.")
+                            except (NoSuchElementException, TimeoutException):
+                                logging.debug("No standard dismiss button found within overlay or button not clickable. Skipping dismissal for this overlay.")
                             except Exception as overlay_e:
                                 logging.error(f"Error attempting to dismiss overlay: {overlay_e}")
                     if overlays and overlays[0].is_displayed():
@@ -362,22 +365,18 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                         post_text = None
                         
                         try:
-                            # First wait for button to be present and visible
                             see_more_button = WebDriverWait(driver, 10).until(
                                 EC.presence_of_element_located((By.XPATH, ".//div[@role='button'][contains(., 'See more') and contains(@class, 'x1i10h5l')] | .//a[contains(., 'See more') and contains(@class, 'x1i10h5l')]"))
                             )
                             
-                            # Scroll into view with proper alignment
                             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", see_more_button)
                             
-                            # Then wait for button to be clickable
                             see_more_button = WebDriverWait(driver, 10).until(
                                 EC.element_to_be_clickable((By.XPATH, ".//div[@role='button'][contains(., 'See more') and contains(@class, 'x1i10h5l')] | .//a[contains(., 'See more') and contains(@class, 'x1i10h5l')]"))
                             )
                             
                             logging.info(f"Attempting to click 'See more' button for post {post_id}.")
                             
-                            # Primary click attempt with visual feedback
                             try:
                                 see_more_button.click()
                                 logging.info(f"Successfully clicked 'See more' button for post {post_id}.")
@@ -386,7 +385,6 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                                 driver.execute_script("arguments[0].click();", see_more_button)
                                 logging.info(f"Used JS fallback to click 'See more' button for post {post_id}.")
                             
-                            # Brief pause to allow content to expand
                             time.sleep(0.5)
                         except (TimeoutException, NoSuchElementException):
                             logging.debug(f"No 'See more' button found or clickable for post {post_id}.")
@@ -571,41 +569,35 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                         elif simple_time_text:
                             logging.warning(f"Timestamp element found but 'title' attribute is missing for post (ID: {post_id}). Attempting to parse simple text: '{simple_time_text}'")
                             try:
-                                # First try to parse as absolute date
-                                posted_at = parse(simple_time_text, fuzzy=True)
-                                logging.debug(f"Parsed as absolute date: {posted_at}")
-                            except Exception:
-                                # If absolute parse fails, try relative time parsing
-                                try:
-                                    now = datetime.now()
-                                    relative_match = re.match(r'(\d+)\s*(s|sec|second|seconds|m|min|minute|minutes|h|hr|hour|hours|d|day|days|w|week|weeks|mo|month|months|y|yr|year|years)\s*ago', simple_time_text.lower())
-                                    if relative_match:
-                                        value = int(relative_match.group(1))
-                                        unit = relative_match.group(2)
+                                now = datetime.now()
+                                relative_match = re.match(r'(\d+)\s*(s|sec|second|seconds|m|min|minute|minutes|h|hr|hour|hours|d|day|days|w|week|weeks|mo|month|months|y|yr|year|years)\s*(ago)?', simple_time_text.lower())
+                                if relative_match:
+                                    value = int(relative_match.group(1))
+                                    unit = relative_match.group(2)
+                                    
+                                    if unit.startswith('s'):
+                                        delta = timedelta(seconds=value)
+                                    elif unit.startswith('m'):
+                                        delta = timedelta(minutes=value)
+                                    elif unit.startswith('h'):
+                                        delta = timedelta(hours=value)
+                                    elif unit.startswith('d'):
+                                        delta = timedelta(days=value)
+                                    elif unit.startswith('w'):
+                                        delta = timedelta(weeks=value)
+                                    elif unit.startswith('mo'):
+                                        delta = timedelta(days=value*30)
+                                    elif unit.startswith('y'):
+                                        delta = timedelta(days=value*365)
                                         
-                                        if unit.startswith('s'):
-                                            delta = timedelta(seconds=value)
-                                        elif unit.startswith('m'):
-                                            delta = timedelta(minutes=value)
-                                        elif unit.startswith('h'):
-                                            delta = timedelta(hours=value)
-                                        elif unit.startswith('d'):
-                                            delta = timedelta(days=value)
-                                        elif unit.startswith('w'):
-                                            delta = timedelta(weeks=value)
-                                        elif unit.startswith('mo'):
-                                            delta = timedelta(days=value*30)
-                                        elif unit.startswith('y'):
-                                            delta = timedelta(days=value*365)
-                                            
-                                        posted_at = now - delta
-                                        logging.debug(f"Parsed relative time '{simple_time_text}' as {posted_at}")
-                                    else:
-                                        posted_at = None
-                                        logging.warning(f"Could not parse relative time format '{simple_time_text}'")
-                                except Exception as parse_e:
-                                    logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' for post (ID: {post_id}): {parse_e}")
-                                    posted_at = None
+                                    posted_at = now - delta
+                                    logging.debug(f"Parsed relative time '{simple_time_text}' as {posted_at}")
+                                else:
+                                    posted_at = parse(simple_time_text, fuzzy=True)
+                                    logging.debug(f"Parsed as absolute date (fallback): {posted_at}")
+                            except Exception as parse_e:
+                                logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' for post (ID: {post_id}): {parse_e}")
+                                posted_at = None
                         else:
                             logging.debug(f"Timestamp element found but no text or title attribute for post (ID: {post_id}).")
                             posted_at = None
