@@ -224,7 +224,7 @@ def main():
         while True:
             clear_screen()
             print(ASCII_ART)
-            print("\nUniversity Group Insights Platform Menu:")
+            print("\nFB Scrape Ideas Menu:")
             print("1. Scrape Posts from Facebook Group")
             print("2. Process Scraped Posts with AI")
             print("3. View Categorized Posts")
