@@ -358,36 +358,71 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
 
                     try:
                         post_text = None
+                        
+                        post_text = None
+                        
+                        try:
+                            see_more_button = WebDriverWait(post_element, 2).until(
+                                EC.element_to_be_clickable((By.XPATH, ".//div[@role='button'][contains(., 'See more')] | .//a[contains(., 'See more')]"))
+                            )
+                            logging.info(f"Attempting to click 'See more' button for post {post_id}.")
+                            driver.execute_script("arguments[0].scrollIntoView(true);", see_more_button)
+                            time.sleep(0.5)
+                            try:
+                                see_more_button.click()
+                            except Exception as click_e:
+                                logging.warning(f"Direct click failed for 'See more' button, trying JS click: {click_e}")
+                                driver.execute_script("arguments[0].click();", see_more_button)
+                            time.sleep(1)
+                            logging.info(f"Clicked 'See more' button for post {post_id}.")
+                        except (TimeoutException, NoSuchElementException):
+                            logging.debug(f"No 'See more' button found or clickable for post {post_id}.")
+                            pass
+                        except Exception as e:
+                            logging.warning(f"Error handling 'See more' button for post {post_id}: {e}")
+                            pass
+
                         post_text_container = post_element.find_elements(By.CSS_SELECTOR, POST_TEXT_CONTAINER_SELECTORS)
                         if post_text_container:
+                            soup = BeautifulSoup(post_text_container[0].get_attribute('outerHTML'), 'html.parser')
                             text_parts = []
-                            for child in post_text_container[0].find_elements(By.CSS_SELECTOR, '> div, > span'):
-                                if child.text and child.text.strip():
-                                    if not child.find_elements(By.CSS_SELECTOR, 'div[role="button"], a[role="button"]'):
-                                        text_parts.append(child.text.strip())
+                            for child in soup.select(':scope > div, :scope > span'):
+                                if child.get_text(strip=True) and not child.select('div[role="button"], a[role="button"]'):
+                                    text_parts.append(child.get_text(strip=True))
+                            
                             if text_parts:
                                 post_text = '\n'.join(text_parts)
+                                logging.debug(f"Extracted post text from parts using BeautifulSoup for {post_id}.")
                             else:
-                                post_text = post_text_container[0].text.strip()
+                                post_text = soup.get_text(strip=True)
+                                logging.debug(f"Extracted post text from container innerText using BeautifulSoup for {post_id}.")
 
                         if not post_text:
                             try:
                                 generic_text_div = post_element.find_element(By.CSS_SELECTOR, GENERIC_TEXT_DIV_SELECTOR)
                                 post_text = generic_text_div.text.strip()
+                                logging.debug(f"Extracted post text from generic div for {post_id}.")
                             except NoSuchElementException:
+                                logging.debug(f"Generic text div not found for post {post_id}.")
                                 pass
 
                         if not post_text:
                             try:
-                                post_text = post_element.text.strip()
-                                post_text = ' '.join(post_text.split())
-                            except Exception:
+                                full_element_text = post_element.text.strip()
+                                post_text = re.sub(r'\s+', ' ', full_element_text).strip()
+                                logging.debug(f"Extracted post text from full element text for {post_id}.")
+                            except Exception as e:
+                                logging.warning(f"Error extracting full element text for post {post_id}: {e}")
                                 post_text = "N/A"
 
-                        logging.info(f"Extracted post_text for {post_id}: '{post_text}'")
+                        if not post_text or post_text.strip() == "":
+                            logging.warning(f"Post text is empty or N/A after all extraction attempts for post (ID: {post_id}, URL: {post_url}).")
+                            post_text = "N/A"
+                        else:
+                            logging.info(f"Successfully extracted post_text for {post_id}.")
+
                     except Exception as e:
-                        logging.warning(f"Could not find standard text element for post (ID: {post_id}, URL: {post_url}). Text will be N/A. Error: {e}")
-                        logging.debug(f"HTML of post element where text extraction failed for post (ID: {post_id}, URL: {post_url}): {post_element.get_attribute('outerHTML')}")
+                        logging.error(f"An unexpected error occurred during post text extraction for post (ID: {post_id}, URL: {post_url}): {e}", exc_info=True)
                         post_text = "N/A"
 
                     try:
