@@ -361,34 +361,31 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                         
                         post_text = None
                         
-                        # Attempt to click "See more" button if present
                         try:
                             see_more_button = WebDriverWait(post_element, 2).until(
                                 EC.element_to_be_clickable((By.XPATH, ".//div[@role='button'][contains(., 'See more')] | .//a[contains(., 'See more')]"))
                             )
                             logging.info(f"Attempting to click 'See more' button for post {post_id}.")
-                            driver.execute_script("arguments[0].scrollIntoView(true);", see_more_button) # Scroll into view
-                            time.sleep(0.5) # Give a moment for scroll
+                            driver.execute_script("arguments[0].scrollIntoView(true);", see_more_button)
+                            time.sleep(0.5)
                             try:
                                 see_more_button.click()
                             except Exception as click_e:
                                 logging.warning(f"Direct click failed for 'See more' button, trying JS click: {click_e}")
-                                driver.execute_script("arguments[0].click();", see_more_button) # Try JS click
-                            time.sleep(1) # Give content time to expand
+                                driver.execute_script("arguments[0].click();", see_more_button)
+                            time.sleep(1)
                             logging.info(f"Clicked 'See more' button for post {post_id}.")
                         except (TimeoutException, NoSuchElementException):
                             logging.debug(f"No 'See more' button found or clickable for post {post_id}.")
-                            pass # No "See more" button, proceed with current content
+                            pass
                         except Exception as e:
                             logging.warning(f"Error handling 'See more' button for post {post_id}: {e}")
                             pass
 
                         post_text_container = post_element.find_elements(By.CSS_SELECTOR, POST_TEXT_CONTAINER_SELECTORS)
                         if post_text_container:
-                            # Use BeautifulSoup to parse the inner HTML of the container for more robust text extraction
                             soup = BeautifulSoup(post_text_container[0].get_attribute('outerHTML'), 'html.parser')
                             text_parts = []
-                            # Find direct children that are div or span and are not buttons
                             for child in soup.select(':scope > div, :scope > span'):
                                 if child.get_text(strip=True) and not child.select('div[role="button"], a[role="button"]'):
                                     text_parts.append(child.get_text(strip=True))
@@ -411,9 +408,7 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
 
                         if not post_text:
                             try:
-                                # Fallback to getting all text from the post element, then cleaning it
                                 full_element_text = post_element.text.strip()
-                                # Basic cleaning: replace multiple newlines/spaces with single space
                                 post_text = re.sub(r'\s+', ' ', full_element_text).strip()
                                 logging.debug(f"Extracted post text from full element text for {post_id}.")
                             except Exception as e:
