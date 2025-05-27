@@ -362,19 +362,32 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                         post_text = None
                         
                         try:
-                            see_more_button = WebDriverWait(post_element, 2).until(
+                            # First wait for button to be present and visible
+                            see_more_button = WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.XPATH, ".//div[@role='button'][contains(., 'See more')] | .//a[contains(., 'See more')]"))
+                            )
+                            
+                            # Scroll into view with proper alignment
+                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", see_more_button)
+                            
+                            # Then wait for button to be clickable
+                            see_more_button = WebDriverWait(driver, 10).until(
                                 EC.element_to_be_clickable((By.XPATH, ".//div[@role='button'][contains(., 'See more')] | .//a[contains(., 'See more')]"))
                             )
+                            
                             logging.info(f"Attempting to click 'See more' button for post {post_id}.")
-                            driver.execute_script("arguments[0].scrollIntoView(true);", see_more_button)
-                            time.sleep(0.5)
+                            
+                            # Primary click attempt with visual feedback
                             try:
                                 see_more_button.click()
+                                logging.info(f"Successfully clicked 'See more' button for post {post_id}.")
                             except Exception as click_e:
-                                logging.warning(f"Direct click failed for 'See more' button, trying JS click: {click_e}")
+                                logging.warning(f"Direct click failed for 'See more' button (post {post_id}), trying JS click: {click_e}")
                                 driver.execute_script("arguments[0].click();", see_more_button)
-                            time.sleep(1)
-                            logging.info(f"Clicked 'See more' button for post {post_id}.")
+                                logging.info(f"Used JS fallback to click 'See more' button for post {post_id}.")
+                            
+                            # Brief pause to allow content to expand
+                            time.sleep(0.5)
                         except (TimeoutException, NoSuchElementException):
                             logging.debug(f"No 'See more' button found or clickable for post {post_id}.")
                             pass
