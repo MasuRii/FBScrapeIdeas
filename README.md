@@ -42,15 +42,15 @@ For a detailed list of features and project goals, please see the [Full Project 
 
 ## 🛠️ Tech Stack
 
-*   **Language:** ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+*   **Language:** `Python`
 *   **Web Scraping:**
-    *   ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=for-the-badge&logo=selenium&logoColor=white)
+    *   `Selenium`
     *   `webdriver-manager`
     *   `BeautifulSoup4`
 *   **AI & Machine Learning:**
     *   `google-generativeai` (Google Gemini Flash)
 *   **Database:**
-    *   ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
+    *   `SQLite`
 *   **CLI:**
     *   `click` (or `argparse`)
 *   **Utilities:**
