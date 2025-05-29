@@ -225,6 +225,50 @@ def handle_view_command(filters: dict):
     else:
         print("Could not connect to the database.")
 
+def handle_export_command(args):
+    """Handles the export-data command."""
+    from export import exporter
+    
+    filters = {
+        'category': args.category,
+        'start_date': args.start_date,
+        'end_date': args.end_date,
+        'post_author': args.post_author,
+        'comment_author': args.comment_author,
+        'keyword': args.keyword,
+        'min_comments': args.min_comments,
+        'max_comments': args.max_comments,
+        'is_idea': args.is_idea
+    }
+    
+    filters = {k: v for k, v in filters.items() if v is not None and v != ''}
+    
+    conn = get_db_connection()
+    if not conn:
+        logging.error("Failed to connect to database. Export aborted.")
+        return
+    
+    try:
+        data = exporter.fetch_data_for_export(conn, filters, args.entity)
+        
+        if not data:
+            logging.warning("No data found for the specified filters and entity.")
+            return
+        
+        if args.format == 'csv':
+            exporter.export_to_csv(data, args.output)
+            logging.info(f"Successfully exported {len(data)} records to CSV: {args.output}")
+        elif args.format == 'json':
+            exporter.export_to_json(data, args.output)
+            logging.info(f"Successfully exported {len(data)} records to JSON: {args.output}")
+        else:
+            logging.error(f"Unsupported export format: {args.format}")
+            
+    except Exception as e:
+        logging.error(f"Error during export: {e}", exc_info=True)
+    finally:
+        conn.close()
+
 def main():
     init_db()
 
@@ -249,6 +293,20 @@ def main():
     view_parser.add_argument('--max-comments', type=int, help='Maximum number of comments.')
     view_parser.add_argument('--is-idea', action='store_true', help='Filter for posts marked as potential ideas.')
 
+    export_parser = subparsers.add_parser('export-data', help='Export data (posts or comments) to CSV or JSON file.')
+    export_parser.add_argument('--format', required=True, choices=['csv', 'json'], help='Output format: csv or json.')
+    export_parser.add_argument('--output', required=True, help='Output file path.')
+    export_parser.add_argument('--entity', choices=['posts', 'comments', 'all'], default='posts', help='Data entity to export (default: posts).')
+    export_parser.add_argument('--category', help='Optional filter to export posts of a specific category.')
+    export_parser.add_argument('--start-date', help='Filter posts by start date (YYYY-MM-DD).')
+    export_parser.add_argument('--end-date', help='Filter posts by end date (YYYY-MM-DD).')
+    export_parser.add_argument('--post-author', help='Filter by post author name.')
+    export_parser.add_argument('--comment-author', help='Filter by comment author name.')
+    export_parser.add_argument('--keyword', help='Keyword search in post and comment content.')
+    export_parser.add_argument('--min-comments', type=int, help='Minimum number of comments.')
+    export_parser.add_argument('--max-comments', type=int, help='Maximum number of comments.')
+    export_parser.add_argument('--is-idea', action='store_true', help='Filter for posts marked as potential ideas.')
+
     args = parser.parse_args()
 
     if args.command:
@@ -269,6 +327,8 @@ def main():
                 'is_idea': args.is_idea
             }
             handle_view_command(filters)
+        elif args.command == 'export-data':
+            handle_export_command(args)
     else:
         while True:
             clear_screen()
@@ -293,7 +353,6 @@ def main():
                 handle_process_ai_command()
                 input("\nPress Enter to continue...")
             elif choice == '3':
-                # Get filter inputs
                 filters = {}
                 category_filter = input("Enter category to filter by (optional, press Enter for all): ").strip()
                 if category_filter:
