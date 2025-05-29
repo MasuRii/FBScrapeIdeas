@@ -4,4 +4,5 @@ google-generativeai
 python-dotenv
 selenium
 webdriver-manager
-python-dateutil 
+python-dateutil
+dateparser
