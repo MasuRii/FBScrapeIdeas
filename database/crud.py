@@ -151,20 +151,71 @@ def add_comments_for_post(db_conn: sqlite3.Connection, internal_post_id: int, co
         db_conn.rollback()
         return False
 
-def get_all_categorized_posts(db_conn: sqlite3.Connection, category_filter: Optional[str] = None) -> List[Dict]:
+def get_all_categorized_posts(db_conn: sqlite3.Connection, filters: Dict) -> List[Dict]:
     """
-    Retrieves all posts that have been processed by AI, optionally filtered by category.
-    """
-    sql = '''
-        SELECT *
-        FROM Posts
-        WHERE is_processed_by_ai = 1
-    '''
-    params = []
-    if category_filter:
-        sql += " AND ai_category = ?"
-        params.append(category_filter)
+    Retrieves all posts that have been processed by AI, filtered by the provided criteria.
 
+    Args:
+        db_conn: Database connection object.
+        filters: Dictionary of filters. Supported keys:
+            category: filter by ai_category.
+            start_date: filter by posted_at >= start_date.
+            end_date: filter by posted_at <= end_date.
+            post_author: filter by post_author_name (partial match).
+            comment_author: filter by comment author (partial match, requires at least one matching comment).
+            keyword: search in post content or comment text (partial match in either).
+            min_comments: minimum number of comments on the post.
+            max_comments: maximum number of comments on the post.
+            is_idea: filter for posts marked as potential ideas (ai_is_potential_idea = 1).
+
+    Returns:
+        List of dictionaries representing posts that match all the filters.
+    """
+    sql = """
+        SELECT Posts.*,
+            (SELECT COUNT(*) FROM Comments WHERE Comments.internal_post_id = Posts.internal_post_id) as comment_count
+        FROM Posts
+        LEFT JOIN Comments ON Posts.internal_post_id = Comments.internal_post_id
+        WHERE is_processed_by_ai = 1
+    """
+    params = []
+
+    if filters.get('category'):
+        sql += " AND ai_category = ?"
+        params.append(filters['category'])
+
+    if filters.get('start_date'):
+        sql += " AND posted_at >= ?"
+        params.append(filters['start_date'])
+    if filters.get('end_date'):
+        sql += " AND posted_at <= ?"
+        params.append(filters['end_date'])
+
+    if filters.get('post_author'):
+        sql += " AND post_author_name LIKE ?"
+        params.append('%' + filters['post_author'] + '%')
+
+    if filters.get('comment_author'):
+        sql += " AND Comments.commenter_name LIKE ?"
+        params.append('%' + filters['comment_author'] + '%')
+
+    if filters.get('keyword'):
+        keyword_pattern = '%' + filters['keyword'] + '%'
+        sql += " AND (Posts.post_content_raw LIKE ? OR Comments.comment_text LIKE ?)"
+        params.extend([keyword_pattern, keyword_pattern])
+
+    if filters.get('min_comments') is not None:
+        sql += " AND comment_count >= ?"
+        params.append(filters['min_comments'])
+    if filters.get('max_comments') is not None:
+        sql += " AND comment_count <= ?"
+        params.append(filters['max_comments'])
+
+    if filters.get('is_idea'):
+        sql += " AND ai_is_potential_idea = 1"
+
+    sql += " GROUP BY Posts.internal_post_id"
+    
     sql += " ORDER BY posted_at DESC"
 
     try:

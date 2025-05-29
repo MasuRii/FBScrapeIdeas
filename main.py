@@ -4,10 +4,7 @@ import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group, is_facebook_session_valid
 from database.crud import get_db_connection, add_scraped_post, add_comments_for_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts, get_comments_for_post, get_unprocessed_comments, update_comment_with_ai_results
-from ai.gemini_service import create_post_batches, categorize_posts_batch, process_comments_with_gemini
-from config import get_facebook_credentials
 from database.db_setup import init_db
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,6 +28,12 @@ def handle_scrape_command(group_url: str, num_posts: int = 20, headless: bool = 
     """Handles the Facebook scraping process."""
     logging.info(f"Running scrape command for {group_url} (fetching {num_posts} posts). Headless: {headless}")
     
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
+    from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group
+    from config import get_facebook_credentials
+
     driver = None
     conn = None
     try:
@@ -91,6 +94,8 @@ def handle_scrape_command(group_url: str, num_posts: int = 20, headless: bool = 
 
 def handle_process_ai_command():
     """Handles the AI processing of scraped posts."""
+    from ai.gemini_service import create_post_batches, categorize_posts_batch, process_comments_with_gemini
+    
     logging.info("Running process-ai command...")
     
     conn = get_db_connection()
@@ -166,16 +171,16 @@ def handle_process_ai_command():
     else:
         logging.error("Could not connect to the database.")
 
-def handle_view_command(category_filter: str = None):
+def handle_view_command(filters: dict):
     """Displays categorized posts from the database."""
-    print(f"Running view command (filtering by: {'all' if category_filter is None else category_filter})...")
+    print(f"Running view command with filters: {filters}")
     
     conn = get_db_connection()
     if conn:
         try:
-            posts = get_all_categorized_posts(conn, category_filter)
+            posts = get_all_categorized_posts(conn, filters)
             if not posts:
-                print("No categorized posts found in the database." + (f" for category '{category_filter}'" if category_filter else ""))
+                print("No categorized posts found in the database.")
                 return
             
             print(f"Found {len(posts)} categorized posts:")
@@ -235,6 +240,14 @@ def main():
 
     view_parser = subparsers.add_parser('view', help='Display categorized posts from the database.')
     view_parser.add_argument('--category', help='Optional filter to display posts of a specific category.')
+    view_parser.add_argument('--start-date', help='Filter posts by start date (YYYY-MM-DD).')
+    view_parser.add_argument('--end-date', help='Filter posts by end date (YYYY-MM-DD).')
+    view_parser.add_argument('--post-author', help='Filter by post author name.')
+    view_parser.add_argument('--comment-author', help='Filter by comment author name.')
+    view_parser.add_argument('--keyword', help='Keyword search in post and comment content.')
+    view_parser.add_argument('--min-comments', type=int, help='Minimum number of comments.')
+    view_parser.add_argument('--max-comments', type=int, help='Maximum number of comments.')
+    view_parser.add_argument('--is-idea', action='store_true', help='Filter for posts marked as potential ideas.')
 
     args = parser.parse_args()
 
@@ -244,7 +257,18 @@ def main():
         elif args.command == 'process-ai':
             handle_process_ai_command()
         elif args.command == 'view':
-            handle_view_command(args.category)
+            filters = {
+                'category': args.category,
+                'start_date': args.start_date,
+                'end_date': args.end_date,
+                'post_author': args.post_author,
+                'comment_author': args.comment_author,
+                'keyword': args.keyword,
+                'min_comments': args.min_comments,
+                'max_comments': args.max_comments,
+                'is_idea': args.is_idea
+            }
+            handle_view_command(filters)
     else:
         while True:
             clear_screen()
@@ -269,8 +293,45 @@ def main():
                 handle_process_ai_command()
                 input("\nPress Enter to continue...")
             elif choice == '3':
+                # Get filter inputs
+                filters = {}
                 category_filter = input("Enter category to filter by (optional, press Enter for all): ").strip()
-                handle_view_command(category_filter if category_filter else None)
+                if category_filter:
+                    filters['category'] = category_filter
+                
+                start_date = input("Start date (YYYY-MM-DD, optional): ").strip()
+                if start_date:
+                    filters['start_date'] = start_date
+                
+                end_date = input("End date (YYYY-MM-DD, optional): ").strip()
+                if end_date:
+                    filters['end_date'] = end_date
+                
+                post_author = input("Filter by post author name (optional): ").strip()
+                if post_author:
+                    filters['post_author'] = post_author
+                
+                comment_author = input("Filter by comment author name (optional): ").strip()
+                if comment_author:
+                    filters['comment_author'] = comment_author
+                
+                keyword = input("Keyword search (optional): ").strip()
+                if keyword:
+                    filters['keyword'] = keyword
+                
+                min_comments = input("Minimum comments (optional): ").strip()
+                if min_comments.isdigit():
+                    filters['min_comments'] = int(min_comments)
+                
+                max_comments = input("Maximum comments (optional): ").strip()
+                if max_comments.isdigit():
+                    filters['max_comments'] = int(max_comments)
+                
+                is_idea = input("Show only potential ideas? (yes/no, default: no): ").strip().lower()
+                if is_idea == 'yes':
+                    filters['is_idea'] = True
+                
+                handle_view_command(filters)
                 input("\nPress Enter to continue...")
             elif choice == '4':
                 print("Exiting application. Goodbye!")
