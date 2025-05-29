@@ -269,6 +269,37 @@ def handle_export_command(args):
     finally:
         conn.close()
 
+from database.stats_queries import get_all_statistics
+
+def handle_stats_command():
+    """Handles the stats command to display summary statistics."""
+    conn = get_db_connection()
+    if not conn:
+        logging.error("Could not connect to the database.")
+        return
+
+    try:
+        stats = get_all_statistics(conn)
+        
+        print("\n===== Database Statistics =====")
+        print(f"Total Posts: {stats['total_posts']}")
+        print(f"Unprocessed Posts: {stats['unprocessed_posts']}")
+        print(f"Total Comments: {stats['total_comments']}")
+        print(f"Average Comments per Post: {stats['avg_comments_per_post']}")
+        
+        print("\nPosts per Category:")
+        for category, count in stats['posts_per_category']:
+            print(f"  {category}: {count}")
+            
+        print("\nTop Authors by Post Count:")
+        for author, count in stats['top_authors']:
+            print(f"  {author}: {count} posts")
+            
+    except Exception as e:
+        logging.error(f"Error generating statistics: {e}")
+    finally:
+        conn.close()
+
 def main():
     init_db()
 
@@ -307,6 +338,8 @@ def main():
     export_parser.add_argument('--max-comments', type=int, help='Maximum number of comments.')
     export_parser.add_argument('--is-idea', action='store_true', help='Filter for posts marked as potential ideas.')
 
+    stats_parser = subparsers.add_parser('stats', help='Display summary statistics about the data in the database.')
+    
     args = parser.parse_args()
 
     if args.command:
@@ -329,6 +362,8 @@ def main():
             handle_view_command(filters)
         elif args.command == 'export-data':
             handle_export_command(args)
+        elif args.command == 'stats':
+            handle_stats_command()
     else:
         while True:
             clear_screen()
