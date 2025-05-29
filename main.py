@@ -5,8 +5,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group, is_facebook_session_valid
-from database.crud import get_db_connection, add_scraped_post, add_comments_for_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts, get_comments_for_post
-from ai.gemini_service import create_post_batches, categorize_posts_batch
+from database.crud import get_db_connection, add_scraped_post, add_comments_for_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts, get_comments_for_post, get_unprocessed_comments, update_comment_with_ai_results
+from ai.gemini_service import create_post_batches, categorize_posts_batch, process_comments_with_gemini
 from config import get_facebook_credentials
 from database.db_setup import init_db
 
@@ -97,42 +97,67 @@ def handle_process_ai_command():
     if conn:
         try:
             unprocessed_posts = get_unprocessed_posts(conn)
-            logging.info(f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database.")
-            for i, post in enumerate(unprocessed_posts[:5]):
-                logging.debug(f"  Post {i+1}: ID={post.get('internal_post_id')}, URL={post.get('post_url')}")
-
             if not unprocessed_posts:
                 logging.info("No unprocessed posts found in the database.")
-                return
-            
-            logging.info(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
-            post_batches = create_post_batches(unprocessed_posts)
-            
-            processed_count = 0
-            for i, batch in enumerate(post_batches):
-                logging.info(f"Processing batch {i+1}/{len(post_batches)} with {len(batch)} posts...")
-                ai_results = categorize_posts_batch(batch)
+            else:
+                logging.info(f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database.")
+                for i, post in enumerate(unprocessed_posts[:5]):
+                    logging.debug(f"  Post {i+1}: ID={post.get('internal_post_id')}, URL={post.get('post_url')}")
+
+                logging.info(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
+                post_batches = create_post_batches(unprocessed_posts)
                 
-                if ai_results:
-                    logging.info(f"Received {len(ai_results)} mapped AI results for batch {i+1}.")
-                    for result in ai_results:
-                        internal_post_id = result.get('internal_post_id')
-                        if internal_post_id is not None:
-                            try:
-                                logging.debug(f"Attempting to update post {internal_post_id} with AI results.")
+                processed_count = 0
+                for i, batch in enumerate(post_batches):
+                    logging.info(f"Processing batch {i+1}/{len(post_batches)} with {len(batch)} posts...")
+                    ai_results = categorize_posts_batch(batch)
+                    
+                    if ai_results:
+                        logging.info(f"Received {len(ai_results)} mapped AI results for batch {i+1}.")
+                        for result in ai_results:
+                            internal_post_id = result.get('internal_post_id')
+                            if internal_post_id is not None:
+                                try:
+                                    logging.debug(f"Attempting to update post {internal_post_id} with AI results.")
+                                    update_post_with_ai_results(conn, internal_post_id, result)
+                                    logging.debug(f"Successfully updated post {internal_post_id} with AI results.")
+                                    processed_count += 1
+                                except Exception as db_e:
+                                    logging.error(f"Error updating post {internal_post_id} with AI results: {db_e}")
+                            else:
+                                logging.error(f"AI result missing 'internal_post_id'. Cannot update database for result: {result}")
+                    else:
+                        logging.warning(f"No AI results returned or mapped for batch {i+1}.")
 
-                                update_post_with_ai_results(conn, internal_post_id, result)
-
-                                logging.debug(f"Successfully updated post {internal_post_id} with AI results.")
-                                processed_count += 1
-                            except Exception as db_e:
-                                 logging.error(f"Error updating post {internal_post_id} with AI results: {db_e}")
-                        else:
-                             logging.error(f"AI result missing 'internal_post_id'. Cannot update database for result: {result}")
-                else:
-                    logging.warning(f"No AI results returned or mapped for batch {i+1}.")
-
-            logging.info(f"Successfully processed {processed_count} posts with AI.")
+                logging.info(f"Successfully processed {processed_count} posts with AI.")
+            
+            unprocessed_comments = get_unprocessed_comments(conn)
+            if not unprocessed_comments:
+                logging.info("No unprocessed comments found in the database.")
+            else:
+                logging.info(f"Found {len(unprocessed_comments)} unprocessed comments. Processing in batches...")
+                batch_size = 5
+                comment_batches = [unprocessed_comments[i:i+batch_size] for i in range(0, len(unprocessed_comments), batch_size)]
+                processed_comment_count = 0
+                for i, batch in enumerate(comment_batches):
+                    logging.info(f"Processing comment batch {i+1}/{len(comment_batches)} with {len(batch)} comments...")
+                    ai_comment_results = process_comments_with_gemini(batch)
+                    if ai_comment_results:
+                        logging.info(f"Received {len(ai_comment_results)} mapped AI results for comment batch {i+1}.")
+                        for result in ai_comment_results:
+                            comment_id = result.get('comment_id')
+                            if comment_id is not None:
+                                try:
+                                    update_comment_with_ai_results(conn, comment_id, result)
+                                    processed_comment_count += 1
+                                except Exception as db_e:
+                                    logging.error(f"Error updating comment {comment_id} with AI results: {db_e}")
+                            else:
+                                logging.error(f"AI result missing 'comment_id'. Cannot update database for result: {result}")
+                    else:
+                        logging.warning(f"No AI results returned or mapped for comment batch {i+1}.")
+                
+                logging.info(f"Successfully processed {processed_comment_count} comments with AI.")
 
         except Exception as e:
             logging.error(f"An error occurred during AI processing or database update: {e}", exc_info=True)
@@ -206,7 +231,7 @@ def main():
     scrape_parser.add_argument('--num-posts', type=int, default=20, help='The number of posts to attempt to scrape (default: 20).')
     scrape_parser.add_argument('--headless', action='store_true', help='Run the browser in headless mode (no GUI).')
 
-    process_ai_parser = subparsers.add_parser('process-ai', help='Fetch unprocessed posts, send them to Gemini for categorization, and update DB.')
+    process_ai_parser = subparsers.add_parser('process-ai', help='Fetch unprocessed posts and comments, send them to Gemini for categorization, and update DB.')
 
     view_parser = subparsers.add_parser('view', help='Display categorized posts from the database.')
     view_parser.add_argument('--category', help='Optional filter to display posts of a specific category.')
@@ -226,7 +251,7 @@ def main():
             print(ASCII_ART)
             print("\nFB Scrape Ideas Menu:")
             print("1. Scrape Posts from Facebook Group")
-            print("2. Process Scraped Posts with AI")
+            print("2. Process Scraped Posts and Comments with AI")
             print("3. View Categorized Posts")
             print("4. Exit")
             

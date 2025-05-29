@@ -15,7 +15,7 @@ This tool helps users identify potential capstone/thesis ideas, student problems
 
 ## 📖 Table of Contents
 
-- [University Group Insights Platform ](#university-group-insights-platform-)
+- [FB Scrape Ideas](#fb-scrape-ideas)
   - [📖 Table of Contents](#-table-of-contents)
   - [✨ Features](#-features)
   - [🛠️ Tech Stack](#️-tech-stack)
@@ -32,7 +32,7 @@ This tool helps users identify potential capstone/thesis ideas, student problems
 ## ✨ Features
 
 *   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts from private or public groups.
-*   **🤖 AI-Powered Post Categorization:** Leverages Google's Gemini Flash model for intelligent post analysis and categorization.
+*   **🤖 AI-Powered Post & Comment Categorization:** Leverages Google's Gemini Flash model for intelligent analysis and categorization of both posts and comments.
 *   **💾 Local Database Storage:** Stores scraped data and AI insights in a local SQLite database.
 *   **💻 Command-Line Interface (CLI):** Provides easy-to-use commands for scraping, AI processing, and data viewing.
 
@@ -130,7 +130,7 @@ python main.py <command> [options]
     ```bash
     python main.py scrape --group-url "GROUP_URL" [--num-posts 50] [--headless]
     ```
-*   `process-ai`: Processes scraped posts with Gemini AI.
+*   `process-ai`: Processes scraped posts and comments with Gemini AI.
     ```bash
     python main.py process-ai
     ```

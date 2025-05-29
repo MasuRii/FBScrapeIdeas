@@ -47,6 +47,12 @@ def init_db(db_name='insights.db'):
                 comment_text TEXT,
                 comment_facebook_id TEXT UNIQUE,
                 comment_scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ai_comment_category TEXT,
+                ai_comment_sentiment TEXT,
+                ai_comment_keywords TEXT,
+                ai_comment_raw_response TEXT,
+                is_processed_by_ai_comment INTEGER DEFAULT 0,
+                last_ai_processing_at_comment TIMESTAMP,
                 FOREIGN KEY (internal_post_id) REFERENCES Posts(internal_post_id)
             )
         ''')

@@ -214,6 +214,59 @@ def get_comments_for_post(db_conn: sqlite3.Connection, internal_post_id: int) ->
         logging.error(f"Error retrieving comments for post {internal_post_id}: {e}")
         return []
 
+def get_unprocessed_comments(db_conn: sqlite3.Connection) -> List[Dict]:
+    """
+    Retrieves comments that have not yet been processed by AI for comment analysis.
+    Returns list of dictionaries containing comment_id and comment_text.
+    """
+    sql = '''
+        SELECT comment_id, comment_text
+        FROM Comments
+        WHERE is_processed_by_ai_comment = 0 AND comment_text IS NOT NULL
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql)
+        return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Error retrieving unprocessed comments: {e}")
+        return []
+
+def update_comment_with_ai_results(db_conn: sqlite3.Connection, comment_id: int, ai_data: Dict):
+    """
+    Updates a comment record with AI analysis results.
+    Sets is_processed_by_ai_comment = 1 and updates processing timestamp.
+    """
+    sql = '''
+        UPDATE Comments
+        SET
+            ai_comment_category = ?,
+            ai_comment_sentiment = ?,
+            ai_comment_keywords = ?,
+            ai_comment_raw_response = ?,
+            is_processed_by_ai_comment = 1,
+            last_ai_processing_at_comment = ?
+        WHERE comment_id = ?
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (
+            ai_data.get('ai_comment_category'),
+            ai_data.get('ai_comment_sentiment'),
+            json.dumps(ai_data.get('ai_comment_keywords', [])),
+            json.dumps(ai_data.get('ai_comment_raw_response', {})),
+            int(time.time()),
+            comment_id
+        ))
+        db_conn.commit()
+        if cursor.rowcount > 0:
+            logging.info(f"Updated comment {comment_id} with AI results.")
+        else:
+            logging.warning(f"Attempted to update non-existent comment: {comment_id}")
+    except sqlite3.Error as e:
+        logging.error(f"Error updating comment {comment_id}: {e}")
+        db_conn.rollback()
+
 if __name__ == '__main__':
     from db_setup import init_db
     init_db()
