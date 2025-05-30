@@ -12,9 +12,18 @@ import time
 import re
 from urllib.parse import urlparse, parse_qs
 from .timestamp_parser import parse_fb_timestamp
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def check_facebook_session(driver: WebDriver) -> bool:
     """
     Checks if the current Selenium WebDriver instance is still logged into Facebook.
@@ -32,6 +41,14 @@ def check_facebook_session(driver: WebDriver) -> bool:
         logging.warning(f"Session appears to be inactive or check failed: {e}")
         return False
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def login_to_facebook(driver: WebDriver, username: str, password: str) -> bool:
     """
     Automates logging into Facebook using provided credentials.
@@ -113,6 +130,14 @@ def login_to_facebook(driver: WebDriver, username: str, password: str) -> bool:
 
     return login_successful
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int) -> List[Dict[str, Any]]:
     """
     Scrapes posts from a specified Facebook group URL using an authenticated Selenium WebDriver instance.
@@ -641,6 +666,14 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
 
     return scraped_posts
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def is_facebook_session_valid(driver: WebDriver) -> bool:
     """
     Performs a basic check to see if the current Facebook session in the driver is still active.

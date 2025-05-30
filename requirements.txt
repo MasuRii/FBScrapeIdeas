@@ -6,3 +6,4 @@ selenium
 webdriver-manager
 python-dateutil
 dateparser
+tenacity

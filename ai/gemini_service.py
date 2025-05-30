@@ -3,6 +3,8 @@ import json
 from typing import List, Dict
 import logging
 import time
+from google.api_core import retry
+from google.api_core import exceptions as core_exceptions
 
 from config import get_google_api_key
 
@@ -32,6 +34,23 @@ def categorize_posts_batch(
         return []
 
     genai.configure(api_key=api_key)
+    def retry_callback(retry_state):
+        if retry_state.outcome.failed:
+            exc = retry_state.outcome.exception()
+            logging.warning(f"Retry attempt {retry_state.attempt_number} for Gemini API call after exception: {exc}. Next attempt in {retry_state.next_action.sleep} seconds.")
+        else:
+            logging.info(f"Gemini API call succeeded after {retry_state.attempt_number} attempt(s).")
+
+    retry_policy = retry.Retry(
+        predicate=retry.if_exception_type(
+            (core_exceptions.ResourceExhausted, core_exceptions.ServiceUnavailable)
+        ),
+        initial=1.0,
+        maximum=10.0,
+        multiplier=2.0,
+        deadline=120,
+        after=retry_callback
+    )
     model = genai.GenerativeModel('models/gemini-2.0-flash')
 
     try:
@@ -76,7 +95,7 @@ def categorize_posts_batch(
         try:
             logging.info(f"Attempt {attempt + 1} to categorize {len(posts)} posts.")
             logging.debug("Making Gemini API call...")
-            response = model.generate_content(prompt_text, generation_config=generation_config)
+            response = retry_policy(model.generate_content)(prompt_text, generation_config=generation_config)
 
             if not response or not response.candidates:
                 block_reason = response.prompt_feedback.block_reason if hasattr(response, 'prompt_feedback') and response.prompt_feedback else 'unknown'
@@ -210,6 +229,23 @@ def process_comments_with_gemini(
         return []
 
     genai.configure(api_key=api_key)
+    def retry_callback(retry_state):
+        if retry_state.outcome.failed:
+            exc = retry_state.outcome.exception()
+            logging.warning(f"Retry attempt {retry_state.attempt_number} for Gemini API call after exception: {exc}. Next attempt in {retry_state.next_action.sleep} seconds.")
+        else:
+            logging.info(f"Gemini API call succeeded after {retry_state.attempt_number} attempt(s).")
+
+    retry_policy = retry.Retry(
+        predicate=retry.if_exception_type(
+            (core_exceptions.ResourceExhausted, core_exceptions.ServiceUnavailable)
+        ),
+        initial=1.0,
+        maximum=10.0,
+        multiplier=2.0,
+        deadline=120,
+        after=retry_callback
+    )
     model = genai.GenerativeModel('models/gemini-2.0-flash')
 
     try:
@@ -251,7 +287,7 @@ def process_comments_with_gemini(
         try:
             logging.info(f"Attempt {attempt + 1} to analyze {len(comments)} comments.")
             logging.debug("Making Gemini API call for comments...")
-            response = model.generate_content(prompt_text, generation_config=generation_config)
+            response = retry_policy(model.generate_content)(prompt_text, generation_config=generation_config)
 
             if not response or not response.candidates:
                 block_reason = response.prompt_feedback.block_reason if hasattr(response, 'prompt_feedback') and response.prompt_feedback else 'unknown'
