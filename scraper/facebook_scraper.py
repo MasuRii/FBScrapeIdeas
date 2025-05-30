@@ -1,3 +1,4 @@
+import uuid
 import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any
@@ -10,11 +11,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException, WebDriverException
 import time
 import re
+import json
 from urllib.parse import urlparse, parse_qs
 from .timestamp_parser import parse_fb_timestamp
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.getLogger().setLevel(logging.DEBUG)
 
 @retry(
     stop=stop_after_attempt(3),
@@ -509,7 +512,59 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                                         comment['commenterName'] = general_commenter_name_el[0].text.strip()
                             except Exception as e:
                                 logging.debug(f"Could not extract commenter name: {e}")
+                    
+                            try:
+                                # Method 1: Try to extract from element ID
+                                element_id = comment_el.get_attribute('id')
+                                if element_id:
+                                    # Check if ID matches Facebook's comment ID pattern (e.g., "comment_1234567890123")
+                                    if element_id.startswith('comment_') and element_id[8:].isdigit():
+                                        comment_id = element_id[8:]
+                                        comment['commentFacebookId'] = comment_id
+                                        logging.debug(f"Extracted comment ID from element id: {comment_id}")
+                                
+                                # Method 2: Look for data-commentid attribute
+                                if not comment.get('commentFacebookId'):
+                                    comment_id = comment_el.get_attribute('data-commentid')
+                                    if comment_id:
+                                        comment['commentFacebookId'] = comment_id
+                                        logging.debug(f"Extracted comment ID from data-commentid: {comment_id}")
 
+                                # Method 3: Extract from permalink button URL
+                                if not comment.get('commentFacebookId'):
+                                    try:
+                                        permalink_btn = comment_el.find_element(
+                                            By.XPATH,
+                                            ".//a[contains(@aria-label, 'Comment') or contains(@href, 'comment')]"
+                                        )
+                                        href = permalink_btn.get_attribute('href')
+                                        if href:
+                                            # Extract comment ID from URL parameters
+                                            query = urlparse(href).query
+                                            params = parse_qs(query)
+                                            if 'comment_id' in params:
+                                                comment_id = params['comment_id'][0]
+                                                comment['commentFacebookId'] = comment_id
+                                                logging.debug(f"Extracted comment ID from permalink URL parameters: {comment_id}")
+                                            else:
+                                                # Extract from fragment identifier
+                                                fragment = urlparse(href).fragment
+                                                if fragment.startswith('comment_'):
+                                                    comment_id = fragment.split('_')[1]
+                                                    comment['commentFacebookId'] = comment_id
+                                                    logging.debug(f"Extracted comment ID from fragment: {comment_id}")
+                                    except Exception as e:
+                                        logging.debug(f"Permalink method failed: {e}")
+
+                                # Method 4: Fallback to generating a unique ID
+                                if not comment.get('commentFacebookId'):
+                                    comment_id = f"fallback_{uuid.uuid4().hex[:10]}"
+                                    comment['commentFacebookId'] = comment_id
+                                    logging.warning(f"Using fallback comment ID generation: {comment_id}")
+
+                            except Exception as e:
+                                logging.debug(f"Unexpected error during comment ID extraction: {e}", exc_info=True)
+                    
                             try:
                                 comment_text_el = comment_el.find_elements(By.CSS_SELECTOR, COMMENT_TEXT_SELECTORS)
                                 if comment_text_el:
