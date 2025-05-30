@@ -18,10 +18,15 @@ def get_db_connection(db_name='insights.db'):
         logging.error(f"Database connection error: {e}")
         return None
 
-def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict) -> Optional[int]:
+def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict, group_id: int) -> Optional[int]:
     """
-    Inserts a new scraped post into the database.
+    Inserts a new scraped post into the database for a specific group.
     Avoids duplicates based on post_url.
+
+    Args:
+        db_conn: Database connection
+        post_data: Dictionary containing post data
+        group_id: ID of the group this post belongs to
 
     Returns:
         The internal_post_id if the post was successfully added or already existed,
@@ -29,13 +34,14 @@ def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict) -> Optional[i
     """
     sql = '''
         INSERT OR IGNORE INTO Posts (
-            facebook_post_id, post_url, post_content_raw, posted_at, scraped_at,
+            group_id, facebook_post_id, post_url, post_content_raw, posted_at, scraped_at,
             post_author_name, post_author_profile_pic_url, post_image_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     try:
         cursor = db_conn.cursor()
         cursor.execute(sql, (
+            group_id,
             post_data.get('facebook_post_id'),
             post_data.get('post_url'),
             post_data.get('content_text'),
@@ -52,7 +58,8 @@ def add_scraped_post(db_conn: sqlite3.Connection, post_data: Dict) -> Optional[i
             return internal_post_id
         else:
             logging.info(f"Post already exists (ignored): {post_data.get('post_url')}. Retrieving existing ID.")
-            cursor.execute("SELECT internal_post_id FROM Posts WHERE post_url = ?", (post_data.get('post_url'),))
+            cursor.execute("SELECT internal_post_id FROM Posts WHERE group_id = ? AND post_url = ?",
+                         (group_id, post_data.get('post_url')))
             existing_id = cursor.fetchone()
             if existing_id:
                 return existing_id[0]
@@ -102,18 +109,30 @@ def update_post_with_ai_results(db_conn: sqlite3.Connection, internal_post_id: i
         logging.error(f"Error updating post {internal_post_id}: {e}")
         db_conn.rollback()
 
-def get_unprocessed_posts(db_conn: sqlite3.Connection) -> List[Dict]:
+def get_unprocessed_posts(db_conn: sqlite3.Connection, group_id: int) -> List[Dict]:
     """
-    Retrieves posts that have not yet been processed by AI.
+    Retrieves posts from a specific group that have not yet been processed by AI.
+
+    Args:
+        db_conn: Database connection
+        group_id: ID of the group to get unprocessed posts from
+
+    Returns:
+        List of dictionaries containing post IDs and content
     """
-    sql = '''
+    base_sql = '''
         SELECT internal_post_id, post_content_raw
         FROM Posts
         WHERE is_processed_by_ai = 0 AND post_content_raw IS NOT NULL
     '''
+    params = []
+    if group_id is not None:
+        base_sql += ' AND group_id = ?'
+        params.append(group_id)
+
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql)
+        cursor.execute(base_sql, params)
         return [dict(row) for row in cursor.fetchall()]
     except sqlite3.Error as e:
         logging.error(f"Error retrieving unprocessed posts: {e}")
@@ -151,12 +170,13 @@ def add_comments_for_post(db_conn: sqlite3.Connection, internal_post_id: int, co
         db_conn.rollback()
         return False
 
-def get_all_categorized_posts(db_conn: sqlite3.Connection, filters: Dict) -> List[Dict]:
+def get_all_categorized_posts(db_conn: sqlite3.Connection, group_id: int, filters: Dict) -> List[Dict]:
     """
-    Retrieves all posts that have been processed by AI, filtered by the provided criteria.
+    Retrieves all posts from a specific group that have been processed by AI, filtered by the provided criteria.
 
     Args:
         db_conn: Database connection object.
+        group_id: ID of the group to get posts from.
         filters: Dictionary of filters. Supported keys:
             category: filter by ai_category.
             start_date: filter by posted_at >= start_date.
@@ -176,7 +196,7 @@ def get_all_categorized_posts(db_conn: sqlite3.Connection, filters: Dict) -> Lis
             (SELECT COUNT(*) FROM Comments WHERE Comments.internal_post_id = Posts.internal_post_id) as comment_count
         FROM Posts
         LEFT JOIN Comments ON Posts.internal_post_id = Comments.internal_post_id
-        WHERE is_processed_by_ai = 1
+        WHERE Posts.group_id = ? AND is_processed_by_ai = 1
     """
     params = []
 
@@ -220,7 +240,7 @@ def get_all_categorized_posts(db_conn: sqlite3.Connection, filters: Dict) -> Lis
 
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql, params)
+        cursor.execute(sql, [group_id] + params)
         results = []
         for row in cursor.fetchall():
             post_dict = dict(row)
@@ -318,11 +338,133 @@ def update_comment_with_ai_results(db_conn: sqlite3.Connection, comment_id: int,
         logging.error(f"Error updating comment {comment_id}: {e}")
         db_conn.rollback()
 
+def add_group(db_conn: sqlite3.Connection, name: str, url: str) -> Optional[int]:
+    """
+    Creates a new group record in the database.
+    
+    Args:
+        db_conn: Database connection
+        name: Name of the group
+        url: URL of the Facebook group
+        
+    Returns:
+        The group_id if successful, None otherwise.
+    """
+    sql = '''
+        INSERT INTO Groups (group_name, group_url)
+        VALUES (?, ?)
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (name, url))
+        db_conn.commit()
+        return cursor.lastrowid
+    except sqlite3.Error as e:
+        logging.error(f"Error adding group {name}: {e}")
+        db_conn.rollback()
+        return None
+
+def get_group_by_id(db_conn: sqlite3.Connection, group_id: int) -> Optional[Dict]:
+    """
+    Retrieves a group by its ID.
+    """
+    sql = '''
+        SELECT * FROM Groups WHERE group_id = ?
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (group_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Error retrieving group {group_id}: {e}")
+        return None
+
+def get_group_by_name(db_conn: sqlite3.Connection, name: str) -> Optional[Dict]:
+    """
+    Retrieves a group by its name (case-sensitive exact match).
+    """
+    sql = '''
+        SELECT * FROM Groups WHERE group_name = ?
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (name,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Error retrieving group by name {name}: {e}")
+        return None
+
+def get_group_by_url(db_conn: sqlite3.Connection, url: str) -> Optional[Dict]:
+    """
+    Retrieves a group by its URL (case-sensitive exact match).
+    """
+    sql = '''
+        SELECT * FROM Groups WHERE group_url = ?
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (url,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Error retrieving group by URL {url}: {e}")
+        return None
+
+def list_groups(db_conn: sqlite3.Connection) -> List[Dict]:
+    """
+    Retrieves all groups from the database.
+    """
+    sql = '''
+        SELECT * FROM Groups ORDER BY group_name
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql)
+        return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Error listing groups: {e}")
+        return []
+
+def remove_group(db_conn: sqlite3.Connection, group_id: int) -> bool:
+    """
+    Deletes a group and all its associated posts (via cascading delete).
+    
+    Args:
+        db_conn: Database connection
+        group_id: ID of the group to remove
+        
+    Returns:
+        True if deleted successfully, False otherwise
+    """
+    sql = '''
+        DELETE FROM Groups WHERE group_id = ?
+    '''
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (group_id,))
+        db_conn.commit()
+        return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Error removing group {group_id}: {e}")
+        db_conn.rollback()
+        return False
+
 if __name__ == '__main__':
     from db_setup import init_db
     init_db()
     conn = get_db_connection()
     if conn:
+        conn.execute(
+            "INSERT INTO Groups (group_name, group_url) VALUES (?, ?)",
+            ("Test Group", "http://example.com/group/test")
+        )
+        conn.commit()
+        cursor = conn.cursor()
+        cursor.execute("SELECT group_id FROM Groups WHERE group_name = 'Test Group'")
+        group_id = cursor.fetchone()[0]
+
         test_post = {
             'facebook_post_id': 'test_fb_id_1',
             'post_url': 'http://example.com/post/1',
@@ -332,7 +474,7 @@ if __name__ == '__main__':
             'post_author_profile_pic_url': 'http://example.com/author_pic.jpg',
             'post_image_url': 'http://example.com/post_image.jpg'
         }
-        post_id = add_scraped_post(conn, test_post)
+        post_id = add_scraped_post(conn, test_post, group_id)
         logging.info(f"Adding test post, returned ID: {post_id}")
 
         cursor = conn.cursor()
@@ -355,7 +497,7 @@ if __name__ == '__main__':
         ]
         logging.info(f"Adding test comments: {add_comments_for_post(conn, post_id, test_comments)}")
 
-        unprocessed = get_unprocessed_posts(conn)
+        unprocessed = get_unprocessed_posts(conn, group_id)
         logging.info(f"Unprocessed posts: {unprocessed}")
 
         ai_data = {
@@ -369,9 +511,9 @@ if __name__ == '__main__':
         }
         logging.info(f"Updating post with AI results: {update_post_with_ai_results(conn, post_id, ai_data)}")
 
-        categorized = get_all_categorized_posts(conn)
+        categorized = get_all_categorized_posts(conn, group_id, {})
         logging.info(f"All categorized posts: {categorized}")
-        categorized_filtered = get_all_categorized_posts(conn, 'Project Idea')
+        categorized_filtered = get_all_categorized_posts(conn, group_id, {'category': 'Project Idea'})
         logging.info(f"Filtered categorized posts: {categorized_filtered}")
 
         comments = get_comments_for_post(conn, post_id)

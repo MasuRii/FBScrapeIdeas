@@ -4,8 +4,50 @@ import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from database.crud import get_db_connection, add_scraped_post, add_comments_for_post, get_unprocessed_posts, update_post_with_ai_results, get_all_categorized_posts, get_comments_for_post, get_unprocessed_comments, update_comment_with_ai_results
+from database.crud import (
+    get_db_connection, add_scraped_post, add_comments_for_post,
+    get_unprocessed_posts, update_post_with_ai_results,
+    get_all_categorized_posts, get_comments_for_post,
+    get_unprocessed_comments, update_comment_with_ai_results,
+    add_group, get_group_by_id, list_groups, remove_group
+)
 from database.db_setup import init_db
+from typing import Optional
+
+def get_or_create_group_id(conn: sqlite3.Connection, group_url: str, group_name: str = None) -> Optional[int]:
+    """
+    Gets the group_id for a given URL, creating a new group entry if it doesn't exist.
+    
+    Args:
+        conn: Database connection
+        group_url: URL of the Facebook group
+        group_name: Optional name for the group (used when creating new group)
+    
+    Returns:
+        group_id if found/created, None on error
+    """
+    try:
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT group_id FROM Groups WHERE group_url = ?", (group_url,))
+        existing = cursor.fetchone()
+        if existing:
+            return existing[0]
+            
+        if not group_name:
+            group_name = f"Group from {group_url}"
+            
+        cursor.execute(
+            "INSERT INTO Groups (group_name, group_url) VALUES (?, ?)",
+            (group_name, group_url)
+        )
+        conn.commit()
+        return cursor.lastrowid
+        
+    except sqlite3.Error as e:
+        logging.error(f"Error getting/creating group: {e}")
+        conn.rollback()
+        return None
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -24,9 +66,20 @@ ASCII_ART = r"""
 l__j   l_____j      \___j\____jl__j\_jl__j__jl__j  l_____j    |____jl_____jl_____jl__j__j \___j
 """
 
-def handle_scrape_command(group_url: str, num_posts: int = 20, headless: bool = False):
-    """Handles the Facebook scraping process."""
-    logging.info(f"Running scrape command for {group_url} (fetching {num_posts} posts). Headless: {headless}")
+def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts: int = 20, headless: bool = False):
+    """Handles the Facebook scraping process for a specific group.
+    
+    Args:
+        group_url: URL of the Facebook group (either URL or ID must be provided)
+        group_id: ID of an existing group (either URL or ID must be provided)
+        num_posts: Number of posts to scrape (default: 20)
+        headless: Run browser in headless mode (default: False)
+    """
+    if not group_url and not group_id:
+        logging.error("Either --group-url or --group-id must be provided")
+        return
+
+    logging.info(f"Running scrape command (fetching {num_posts} posts). Headless: {headless}")
     
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
@@ -60,13 +113,19 @@ def handle_scrape_command(group_url: str, num_posts: int = 20, headless: bool = 
             
             conn = get_db_connection()
             if conn:
-                scraped_posts = scrape_authenticated_group(driver, group_url, num_posts)
+                if group_url and not group_id:
+                    group_id = get_or_create_group_id(conn, group_url)
+                    if not group_id:
+                        logging.error("Failed to resolve or create group from URL")
+                        return
+
+                scraped_posts = scrape_authenticated_group(driver, group_url or f"ID:{group_id}", num_posts)
                 
                 added_count = 0
                 if scraped_posts:
                     logging.info(f"Attempting to add {len(scraped_posts)} scraped posts and their comments to the database.")
                     for post in scraped_posts:
-                        internal_post_id = add_scraped_post(conn, post)
+                        internal_post_id = add_scraped_post(conn, post, group_id)
                         if internal_post_id:
                             added_count += 1
                             if post.get('comments'):
@@ -92,8 +151,12 @@ def handle_scrape_command(group_url: str, num_posts: int = 20, headless: bool = 
             conn.close()
             logging.info("Database connection closed.")
 
-def handle_process_ai_command():
-    """Handles the AI processing of scraped posts."""
+def handle_process_ai_command(group_id: int = None):
+    """Handles the AI processing of scraped posts for a specific group.
+    
+    Args:
+        group_id: Optional ID of the group to process posts from. If None, processes all groups.
+    """
     from ai.gemini_service import create_post_batches, categorize_posts_batch, process_comments_with_gemini
     
     logging.info("Running process-ai command...")
@@ -101,7 +164,7 @@ def handle_process_ai_command():
     conn = get_db_connection()
     if conn:
         try:
-            unprocessed_posts = get_unprocessed_posts(conn)
+            unprocessed_posts = get_unprocessed_posts(conn, group_id)
             if not unprocessed_posts:
                 logging.info("No unprocessed posts found in the database.")
             else:
@@ -171,14 +234,23 @@ def handle_process_ai_command():
     else:
         logging.error("Could not connect to the database.")
 
-def handle_view_command(filters: dict):
-    """Displays categorized posts from the database."""
-    print(f"Running view command with filters: {filters}")
+def handle_view_command(group_id: int = None, filters: dict = None):
+    """Displays categorized posts from the database, optionally filtered by group.
+    
+    Args:
+        group_id: Optional ID of the group to view posts from
+        filters: Dictionary of additional filters to apply
+    """
+    filters = filters or {}
+    if group_id:
+        print(f"Running view command for group {group_id} with filters: {filters}")
+    else:
+        print(f"Running view command with filters: {filters}")
     
     conn = get_db_connection()
     if conn:
         try:
-            posts = get_all_categorized_posts(conn, filters)
+            posts = get_all_categorized_posts(conn, group_id, filters) if group_id else get_all_categorized_posts(conn, None, filters)
             if not posts:
                 print("No categorized posts found in the database.")
                 return
@@ -271,6 +343,76 @@ def handle_export_command(args):
 
 from database.stats_queries import get_all_statistics
 
+def handle_add_group_command(group_name: str, group_url: str):
+    """Handles adding a new Facebook group to track."""
+    logging.info(f"Adding new group: {group_name} ({group_url})")
+    
+    conn = get_db_connection()
+    if not conn:
+        logging.error("Could not connect to the database.")
+        return
+    
+    try:
+        group_id = add_group(conn, group_name, group_url)
+        if group_id:
+            logging.info(f"Successfully added group with ID: {group_id}")
+        else:
+            logging.error("Failed to add group - it may already exist")
+    except Exception as e:
+        logging.error(f"Error adding group: {e}")
+    finally:
+        conn.close()
+
+def handle_list_groups_command():
+    """Handles listing all tracked Facebook groups."""
+    logging.info("Listing all groups...")
+    
+    conn = get_db_connection()
+    if not conn:
+        logging.error("Could not connect to the database.")
+        return
+    
+    try:
+        groups = list_groups(conn)
+        if not groups:
+            logging.info("No groups found in database.")
+            return
+            
+        logging.info("\n===== Tracked Groups =====")
+        for group in groups:
+            print(f"ID: {group['group_id']}")
+            print(f"Name: {group['group_name']}")
+            print(f"URL: {group['group_url']}")
+            print("-" * 20)
+    except Exception as e:
+        logging.error(f"Error listing groups: {e}")
+    finally:
+        conn.close()
+
+def handle_remove_group_command(group_id: int):
+    """Handles removing a group and its posts from tracking."""
+    logging.info(f"Removing group with ID: {group_id}")
+    
+    conn = get_db_connection()
+    if not conn:
+        logging.error("Could not connect to the database.")
+        return
+    
+    try:
+        group = get_group_by_id(conn, group_id)
+        if not group:
+            logging.error(f"No group found with ID: {group_id}")
+            return
+            
+        if remove_group(conn, group_id):
+            logging.info(f"Successfully removed group {group['group_name']} (ID: {group_id})")
+        else:
+            logging.error(f"Failed to remove group {group_id}")
+    except Exception as e:
+        logging.error(f"Error removing group: {e}")
+    finally:
+        conn.close()
+
 def handle_stats_command():
     """Handles the stats command to display summary statistics."""
     conn = get_db_connection()
@@ -307,13 +449,17 @@ def main():
     subparsers = parser.add_subparsers(dest='command')
 
     scrape_parser = subparsers.add_parser('scrape', help='Initiate the Facebook scraping process and store results in DB.')
-    scrape_parser.add_argument('--group-url', required=True, help='The URL of the Facebook group to scrape.')
+    group_group = scrape_parser.add_mutually_exclusive_group(required=True)
+    group_group.add_argument('--group-url', help='The URL of the Facebook group to scrape.')
+    group_group.add_argument('--group-id', type=int, help='The ID of an existing group to scrape.')
     scrape_parser.add_argument('--num-posts', type=int, default=20, help='The number of posts to attempt to scrape (default: 20).')
     scrape_parser.add_argument('--headless', action='store_true', help='Run the browser in headless mode (no GUI).')
 
     process_ai_parser = subparsers.add_parser('process-ai', help='Fetch unprocessed posts and comments, send them to Gemini for categorization, and update DB.')
+    process_ai_parser.add_argument('--group-id', type=int, help='Only process posts from this group ID.')
 
     view_parser = subparsers.add_parser('view', help='Display categorized posts from the database.')
+    view_parser.add_argument('--group-id', type=int, help='Only show posts from this group ID.')
     view_parser.add_argument('--category', help='Optional filter to display posts of a specific category.')
     view_parser.add_argument('--start-date', help='Filter posts by start date (YYYY-MM-DD).')
     view_parser.add_argument('--end-date', help='Filter posts by end date (YYYY-MM-DD).')
@@ -338,15 +484,24 @@ def main():
     export_parser.add_argument('--max-comments', type=int, help='Maximum number of comments.')
     export_parser.add_argument('--is-idea', action='store_true', help='Filter for posts marked as potential ideas.')
 
+    add_group_parser = subparsers.add_parser('add-group', help='Add a new Facebook group to track.')
+    add_group_parser.add_argument('--name', required=True, help='Name of the Facebook group.')
+    add_group_parser.add_argument('--url', required=True, help='URL of the Facebook group.')
+    
+    list_groups_parser = subparsers.add_parser('list-groups', help='List all tracked Facebook groups.')
+    
+    remove_group_parser = subparsers.add_parser('remove-group', help='Remove a Facebook group from tracking.')
+    remove_group_parser.add_argument('--id', type=int, required=True, help='ID of the group to remove.')
+
     stats_parser = subparsers.add_parser('stats', help='Display summary statistics about the data in the database.')
     
     args = parser.parse_args()
 
     if args.command:
         if args.command == 'scrape':
-            handle_scrape_command(args.group_url, args.num_posts, args.headless)
+            handle_scrape_command(args.group_url, args.group_id, args.num_posts, args.headless)
         elif args.command == 'process-ai':
-            handle_process_ai_command()
+            handle_process_ai_command(args.group_id)
         elif args.command == 'view':
             filters = {
                 'category': args.category,
@@ -359,9 +514,15 @@ def main():
                 'max_comments': args.max_comments,
                 'is_idea': args.is_idea
             }
-            handle_view_command(filters)
+            handle_view_command(args.group_id, filters)
         elif args.command == 'export-data':
             handle_export_command(args)
+        elif args.command == 'add-group':
+            handle_add_group_command(args.name, args.url)
+        elif args.command == 'list-groups':
+            handle_list_groups_command()
+        elif args.command == 'remove-group':
+            handle_remove_group_command(args.id)
         elif args.command == 'stats':
             handle_stats_command()
     else:
@@ -372,7 +533,8 @@ def main():
             print("1. Scrape Posts from Facebook Group")
             print("2. Process Scraped Posts and Comments with AI")
             print("3. View Categorized Posts")
-            print("4. Exit")
+            print("4. Manage Groups")
+            print("5. Exit")
             
             choice = input("\nEnter your choice: ").strip()
             
@@ -382,7 +544,7 @@ def main():
                 num_posts = int(num_posts_input) if num_posts_input.isdigit() else 20
                 headless_input = input("Run in headless mode? (yes/no, default: no): ").strip().lower()
                 headless = headless_input == 'yes'
-                handle_scrape_command(group_url, num_posts, headless)
+                handle_scrape_command(group_url=group_url, num_posts=num_posts, headless=headless)
                 input("\nPress Enter to continue...")
             elif choice == '2':
                 handle_process_ai_command()
@@ -425,9 +587,35 @@ def main():
                 if is_idea == 'yes':
                     filters['is_idea'] = True
                 
-                handle_view_command(filters)
+                handle_view_command(filters=filters)
                 input("\nPress Enter to continue...")
             elif choice == '4':
+                print("\nGroup Management:")
+                print("1. Add New Group")
+                print("2. List All Groups")
+                print("3. Remove Group")
+                print("4. Back to Main Menu")
+                
+                sub_choice = input("\nEnter your choice: ").strip()
+                
+                if sub_choice == '1':
+                    name = input("Enter group name: ").strip()
+                    url = input("Enter group URL: ").strip()
+                    handle_add_group_command(name, url)
+                elif sub_choice == '2':
+                    handle_list_groups_command()
+                elif sub_choice == '3':
+                    group_id = input("Enter group ID to remove: ").strip()
+                    if group_id.isdigit():
+                        handle_remove_group_command(int(group_id))
+                    else:
+                        print("Invalid group ID. Must be a number.")
+                elif sub_choice == '4':
+                    continue
+                else:
+                    print("Invalid choice.")
+                input("\nPress Enter to continue...")
+            elif choice == '5':
                 print("Exiting application. Goodbye!")
                 break
             else:

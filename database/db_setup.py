@@ -5,7 +5,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def init_db(db_name='insights.db'):
     """
-    Initializes the SQLite database and creates the Posts table if it doesn't exist.
+    Initializes the SQLite database and creates required tables if they don't exist.
+    Now supports multiple Facebook groups with Groups table.
 
     Args:
         db_name: The name of the SQLite database file.
@@ -16,8 +17,18 @@ def init_db(db_name='insights.db'):
         cursor = conn.cursor()
 
         cursor.execute('''
+            CREATE TABLE IF NOT EXISTS Groups (
+                group_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_name TEXT UNIQUE NOT NULL,
+                group_url TEXT UNIQUE NOT NULL,
+                last_scraped_at TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS Posts (
                 internal_post_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL,
                 facebook_post_id TEXT UNIQUE,
                 post_url TEXT UNIQUE,
                 post_content_raw TEXT,
@@ -34,7 +45,8 @@ def init_db(db_name='insights.db'):
                 ai_reasoning TEXT,
                 ai_raw_response TEXT, -- Storing as JSON string
                 is_processed_by_ai INTEGER DEFAULT 0, -- 0 for False, 1 for True
-                last_ai_processing_at TIMESTAMP
+                last_ai_processing_at TIMESTAMP,
+                FOREIGN KEY (group_id) REFERENCES Groups(group_id)
             )
         ''')
 
@@ -58,7 +70,7 @@ def init_db(db_name='insights.db'):
         ''')
 
         conn.commit()
-        logging.info(f"Database '{db_name}' initialized and Posts table created or verified.")
+        logging.info(f"Database '{db_name}' initialized with Groups and Posts tables created or verified.")
 
     except sqlite3.Error as e:
         logging.error(f"Database error: {e}")
