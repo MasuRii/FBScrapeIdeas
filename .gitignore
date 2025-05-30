@@ -1,6 +1,7 @@
 .venv/
 .env
 .cursor
+.pytest_cache
 __pycache__
 insights.db
 .vscode
