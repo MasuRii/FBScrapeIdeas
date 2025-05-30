@@ -1,6 +1,7 @@
 import argparse
 import sqlite3
 import logging
+import asyncio
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -50,6 +51,9 @@ def get_or_create_group_id(conn: sqlite3.Connection, group_url: str, group_name:
         return None
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.getLogger('WDM').setLevel(logging.WARNING)
+logging.getLogger('webdriver_manager').setLevel(logging.WARNING)
+
 
 def clear_screen():
     """Clears the terminal screen."""
@@ -119,12 +123,17 @@ def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts
                         logging.error("Failed to resolve or create group from URL")
                         return
 
-                scraped_posts = scrape_authenticated_group(driver, group_url or f"ID:{group_id}", num_posts)
+                scraped_posts_generator = scrape_authenticated_group(
+                    driver,
+                    group_url or f"ID:{group_id}",
+                    num_posts,
+                )
+                scraped_posts_list = list(scraped_posts_generator)
                 
                 added_count = 0
-                if scraped_posts:
-                    logging.info(f"Attempting to add {len(scraped_posts)} scraped posts and their comments to the database.")
-                    for post in scraped_posts:
+                if scraped_posts_list:
+                    logging.info(f"Attempting to add {len(scraped_posts_list)} scraped posts and their comments to the database.")
+                    for post in scraped_posts_list:
                         internal_post_id = add_scraped_post(conn, post, group_id)
                         if internal_post_id:
                             added_count += 1
@@ -151,7 +160,7 @@ def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts
             conn.close()
             logging.info("Database connection closed.")
 
-def handle_process_ai_command(group_id: int = None):
+async def handle_process_ai_command(group_id: int = None):
     """Handles the AI processing of scraped posts for a specific group.
     
     Args:
@@ -169,7 +178,7 @@ def handle_process_ai_command(group_id: int = None):
                 logging.info("No unprocessed posts found in the database.")
             else:
                 logging.info(f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database.")
-                for i, post in enumerate(unprocessed_posts[:5]):
+                for i, post in enumerate(unprocessed_posts[:min(5, len(unprocessed_posts))]):
                     logging.debug(f"  Post {i+1}: ID={post.get('internal_post_id')}, URL={post.get('post_url')}")
 
                 logging.info(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
@@ -178,7 +187,7 @@ def handle_process_ai_command(group_id: int = None):
                 processed_count = 0
                 for i, batch in enumerate(post_batches):
                     logging.info(f"Processing batch {i+1}/{len(post_batches)} with {len(batch)} posts...")
-                    ai_results = categorize_posts_batch(batch)
+                    ai_results = await categorize_posts_batch(batch)
                     
                     if ai_results:
                         logging.info(f"Received {len(ai_results)} mapped AI results for batch {i+1}.")
@@ -501,7 +510,7 @@ def main():
         if args.command == 'scrape':
             handle_scrape_command(args.group_url, args.group_id, args.num_posts, args.headless)
         elif args.command == 'process-ai':
-            handle_process_ai_command(args.group_id)
+            asyncio.run(handle_process_ai_command(args.group_id))
         elif args.command == 'view':
             filters = {
                 'category': args.category,
@@ -547,7 +556,7 @@ def main():
                 handle_scrape_command(group_url=group_url, num_posts=num_posts, headless=headless)
                 input("\nPress Enter to continue...")
             elif choice == '2':
-                handle_process_ai_command()
+                asyncio.run(handle_process_ai_command())
                 input("\nPress Enter to continue...")
             elif choice == '3':
                 filters = {}

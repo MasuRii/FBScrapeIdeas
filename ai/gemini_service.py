@@ -1,3 +1,4 @@
+import re
 import google.generativeai as genai
 import json
 from typing import List, Dict
@@ -10,20 +11,23 @@ from config import get_google_api_key
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def categorize_posts_batch(
+import asyncio
+from google.api_core import retry_async
+
+async def categorize_posts_batch(
     posts: List[Dict],
     max_retries: int = 3,
-    initial_delay: int = 5
+    initial_delay: float = 1.0
 ) -> List[Dict]:
     """
-    Sends a batch of posts to Gemini 2.0 Flash for categorization and returns the results.
-    Includes basic error handling and retry logic.
+    Asynchronously sends a batch of posts to Gemini 2.0 Flash for categorization.
+    Uses exponential backoff with jitter for retries and concurrent processing.
 
     Args:
         posts: A list of dictionaries, each containing 'internal_post_id' and 'post_content_raw'.
 
     Returns:
-        A list of dictionaries with added AI categorization results, or an empty list if processing fails.
+        A list of dictionaries with added AI categorization results.
     """
     if not posts:
         return []
@@ -34,24 +38,18 @@ def categorize_posts_batch(
         return []
 
     genai.configure(api_key=api_key)
-    def retry_callback(retry_state):
-        if retry_state.outcome.failed:
-            exc = retry_state.outcome.exception()
-            logging.warning(f"Retry attempt {retry_state.attempt_number} for Gemini API call after exception: {exc}. Next attempt in {retry_state.next_action.sleep} seconds.")
-        else:
-            logging.info(f"Gemini API call succeeded after {retry_state.attempt_number} attempt(s).")
-
-    retry_policy = retry.Retry(
-        predicate=retry.if_exception_type(
+    model = genai.GenerativeModel('models/gemini-2.0-flash')
+    
+    async_retry = retry_async.AsyncRetry(
+        predicate=retry_async.if_exception_type(
             (core_exceptions.ResourceExhausted, core_exceptions.ServiceUnavailable)
         ),
-        initial=1.0,
-        maximum=10.0,
+        initial=initial_delay,
+        maximum=60.0,
         multiplier=2.0,
-        deadline=120,
-        after=retry_callback
+        deadline=300,
+        jitter=True
     )
-    model = genai.GenerativeModel('models/gemini-2.0-flash')
 
     try:
         with open('ai/gemini_schema.json', 'r') as f:
@@ -95,7 +93,7 @@ def categorize_posts_batch(
         try:
             logging.info(f"Attempt {attempt + 1} to categorize {len(posts)} posts.")
             logging.debug("Making Gemini API call...")
-            response = retry_policy(model.generate_content)(prompt_text, generation_config=generation_config)
+            response = await async_retry(model.generate_content_async)(prompt_text, generation_config=generation_config)
 
             if not response or not response.candidates:
                 block_reason = response.prompt_feedback.block_reason if hasattr(response, 'prompt_feedback') and response.prompt_feedback else 'unknown'
@@ -139,14 +137,19 @@ def categorize_posts_batch(
 
                 if post_id_from_ai and post_id_from_ai.startswith('POST_ID_'):
                     try:
-                        original_id = int(post_id_from_ai.replace('POST_ID_', ''))
-                        if original_id in post_id_map:
-                            original_post = post_id_map[original_id]
-                            logging.debug(f"Mapped AI result using postId: {post_id_from_ai} to original post ID: {original_id}")
+                        id_str_part = post_id_from_ai.replace('POST_ID_', '')
+                        match = re.match(r"(\d+)", id_str_part)
+                        if match:
+                            original_id = int(match.group(1))
+                            if original_id in post_id_map:
+                                original_post = post_id_map[original_id]
+                                logging.debug(f"Mapped AI result using postId: {post_id_from_ai} (parsed as {original_id}) to original post ID: {original_id}")
+                            else:
+                                logging.warning(f"Gemini returned unknown postId {post_id_from_ai}. Parsed ID {original_id} not in post_id_map. Attempting fallback match.")
                         else:
-                            logging.warning(f"Gemini returned unknown postId {post_id_from_ai}. Original ID {original_id} not in post_id_map. Attempting fallback match.")
+                            logging.warning(f"Gemini returned postId {post_id_from_ai} with no leading numeric part after 'POST_ID_'. Attempting fallback match.")
                     except (ValueError, IndexError) as e:
-                        logging.warning(f"Gemini returned invalid postId format: {post_id_from_ai}. Error: {e}. Attempting fallback match.")
+                        logging.warning(f"Gemini returned invalid postId format or content: {post_id_from_ai}. Error: {e}. Attempting fallback match.")
 
                 if not original_post:
                     logging.debug("Attempting fallback mapping by content.")
@@ -366,38 +369,41 @@ def process_comments_with_gemini(
     logging.error("Exited retry loop without successful comment analysis.")
     return []
 
-def create_post_batches(all_posts: List[Dict], batch_size_chars: int = 700000) -> List[List[Dict]]:
+def create_post_batches(all_posts: List[Dict], max_tokens: int = 800000) -> List[List[Dict]]:
     """
-    Groups a list of posts into batches based on character count.
+    Groups posts into batches based on token count (Gemini 2.0 Flash has 1M token limit).
+    Uses 4:1 character-to-token ratio as a safe estimate.
 
     Args:
-        all_posts: A list of post dictionaries.
-        batch_size_chars: The maximum character count per batch.
+        all_posts: List of post dictionaries
+        max_tokens: Maximum tokens per batch (default 800k for safety)
 
     Returns:
-        A list of lists, where each inner list is a batch of post dictionaries.
+        List of batched posts
     """
-    batches: List[List[Dict]] = []
-    current_batch: List[Dict] = []
-    current_batch_char_count = 0
+    batches = []
+    current_batch = []
+    current_tokens = 0
 
     for post in all_posts:
-        post_char_count = len(post.get('post_content_raw', ''))
-        estimated_post_token_count = post_char_count + 100
-
-        if current_batch_char_count + estimated_post_token_count > batch_size_chars:
+        content = post.get('post_content_raw', '')
+        post_tokens = len(content) // 4 + 100
+        
+        if current_tokens + post_tokens > max_tokens:
             if current_batch:
                 batches.append(current_batch)
-            current_batch = [post]
-            current_batch_char_count = estimated_post_token_count
-        else:
-            current_batch.append(post)
-            current_batch_char_count += estimated_post_token_count
+                current_batch = []
+                current_tokens = 0
+            else:
+                logging.warning(f"Single post exceeds max tokens ({post_tokens} > {max_tokens})")
+        
+        current_batch.append(post)
+        current_tokens += post_tokens
 
     if current_batch:
         batches.append(current_batch)
 
-    logging.info(f"Created {len(batches)} batches from {len(all_posts)} posts.")
+    logging.info(f"Created {len(batches)} batches averaging {current_tokens//len(batches) if batches else 0} tokens/batch")
     return batches
 
 if __name__ == '__main__':
