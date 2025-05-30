@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -11,10 +11,19 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 import time
 import re
 from urllib.parse import urlparse, parse_qs
-from dateutil.parser import parse
+from .timestamp_parser import parse_fb_timestamp
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def check_facebook_session(driver: WebDriver) -> bool:
     """
     Checks if the current Selenium WebDriver instance is still logged into Facebook.
@@ -32,6 +41,14 @@ def check_facebook_session(driver: WebDriver) -> bool:
         logging.warning(f"Session appears to be inactive or check failed: {e}")
         return False
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def login_to_facebook(driver: WebDriver, username: str, password: str) -> bool:
     """
     Automates logging into Facebook using provided credentials.
@@ -113,6 +130,14 @@ def login_to_facebook(driver: WebDriver, username: str, password: str) -> bool:
 
     return login_successful
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int) -> List[Dict[str, Any]]:
     """
     Scrapes posts from a specified Facebook group URL using an authenticated Selenium WebDriver instance.
@@ -500,9 +525,20 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                             except Exception as e:
                                 logging.debug(f"Could not extract comment text: {e}")
 
+                            try:
+                                timestamp_element = comment_el.find_element(By.XPATH, ".//a[contains(@href, '#') and @aria-label]")
+                                raw_timestamp = timestamp_element.get_attribute('aria-label')
+                                if raw_timestamp:
+                                    comment['comment_timestamp'] = parse_fb_timestamp(raw_timestamp).isoformat() if parse_fb_timestamp(raw_timestamp) else None
+                                else:
+                                    comment['comment_timestamp'] = None
+                            except Exception as e:
+                                logging.debug(f"Could not extract comment timestamp: {e}")
+                                comment['comment_timestamp'] = None
+
                             if comment['commenterName'] or comment['commentText']:
                                 comments_data.append(comment)
-                        logging.debug(f"Extracted {len(comments_data)} comments for post {post_id}.")
+                        logging.debug(f"Extracted {len(comments_data)} comments with timestamps for post {post_id}.")
                     except Exception as e:
                         logging.warning(f"Error extracting comments for post {post_id}: {e}")
 
@@ -551,55 +587,12 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
                                 logging.debug(f"Error extracting timestamp from aria-label: {e}")
                                 pass
 
-                        if datetime_str:
-                            try:
-                                posted_at = datetime.strptime(datetime_str, "%A, %d %B %Y at %I:%M %p")
-                                logging.debug(f"Parsed full datetime from title: {posted_at}")
-                            except ValueError:
-                                logging.warning(f"Could not parse detailed timestamp format '{datetime_str}' for post (ID: {post_id}).")
-                                if simple_time_text:
-                                    try:
-                                        posted_at = parse(simple_time_text, fuzzy=True)
-                                        logging.debug(f"Parsed simple/relative time text '{simple_time_text}' using dateutil: {posted_at}")
-                                    except Exception as parse_e:
-                                        logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' using dateutil for post (ID: {post_id}): {parse_e}")
-                                        posted_at = None
-                                else:
-                                    posted_at = None
-                        elif simple_time_text:
-                            logging.warning(f"Timestamp element found but 'title' attribute is missing for post (ID: {post_id}). Attempting to parse simple text: '{simple_time_text}'")
-                            try:
-                                now = datetime.now()
-                                relative_match = re.match(r'(\d+)\s*(s|sec|second|seconds|m|min|minute|minutes|h|hr|hour|hours|d|day|days|w|week|weeks|mo|month|months|y|yr|year|years)\s*(ago)?', simple_time_text.lower())
-                                if relative_match:
-                                    value = int(relative_match.group(1))
-                                    unit = relative_match.group(2)
-                                    
-                                    if unit.startswith('s'):
-                                        delta = timedelta(seconds=value)
-                                    elif unit.startswith('m'):
-                                        delta = timedelta(minutes=value)
-                                    elif unit.startswith('h'):
-                                        delta = timedelta(hours=value)
-                                    elif unit.startswith('d'):
-                                        delta = timedelta(days=value)
-                                    elif unit.startswith('w'):
-                                        delta = timedelta(weeks=value)
-                                    elif unit.startswith('mo'):
-                                        delta = timedelta(days=value*30)
-                                    elif unit.startswith('y'):
-                                        delta = timedelta(days=value*365)
-                                        
-                                    posted_at = now - delta
-                                    logging.debug(f"Parsed relative time '{simple_time_text}' as {posted_at}")
-                                else:
-                                    posted_at = parse(simple_time_text, fuzzy=True)
-                                    logging.debug(f"Parsed as absolute date (fallback): {posted_at}")
-                            except Exception as parse_e:
-                                logging.warning(f"Could not parse simple/relative time text '{simple_time_text}' for post (ID: {post_id}): {parse_e}")
-                                posted_at = None
+                        raw_timestamp = datetime_str or simple_time_text
+                        if raw_timestamp:
+                            posted_at = parse_fb_timestamp(raw_timestamp)
+                            logging.debug(f"Parsed timestamp '{raw_timestamp}' to UTC: {posted_at}")
                         else:
-                            logging.debug(f"Timestamp element found but no text or title attribute for post (ID: {post_id}).")
+                            logging.warning(f"Could not extract timestamp string for post (ID: {post_id})")
                             posted_at = None
 
                     except NoSuchElementException:
@@ -673,6 +666,14 @@ def scrape_authenticated_group(driver: WebDriver, group_url: str, num_posts: int
 
     return scraped_posts
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(
+        (NoSuchElementException, StaleElementReferenceException, TimeoutException)
+    ),
+    reraise=True
+)
 def is_facebook_session_valid(driver: WebDriver) -> bool:
     """
     Performs a basic check to see if the current Facebook session in the driver is still active.

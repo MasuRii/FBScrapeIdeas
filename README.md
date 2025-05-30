@@ -9,36 +9,61 @@
 
 A CLI-driven application to scrape and analyze Facebook group posts for insights using Selenium and Google Gemini AI.
 
-This tool helps users identify potential capstone/thesis ideas, student problems, or other valuable insights from university Facebook group discussions by automating data collection and AI-powered categorization.
+This tool helps users identify potential capstone/thesis ideas, student problems, or other valuable insights from university Facebook group discussions by automating data collection (including posts and comments) and AI-powered categorization.
 
----
 
 ## 📖 Table of Contents
 
-- [University Group Insights Platform ](#university-group-insights-platform-)
+- [FB Scrape Ideas](#fb-scrape-ideas)
   - [📖 Table of Contents](#-table-of-contents)
   - [✨ Features](#-features)
+  - [📝 Scraped Data Fields](#-scraped-data-fields)
+    - [🗨️ Posts](#️-posts)
+    - [💬 Comments](#-comments)
+    - [🔍 AI Analysis Fields](#-ai-analysis-fields)
   - [🛠️ Tech Stack](#️-tech-stack)
   - [📋 Prerequisites](#-prerequisites)
   - [🚀 Getting Started](#-getting-started)
     - [Installation](#installation)
     - [Configuration](#configuration)
   - [⚙️ Usage](#️-usage)
-  - [📂 Project Structure](#-project-structure)
+  - [⚠️ Important Notice](#️-important-notice)
   - [📚 Full Documentation](#-full-documentation)
 
----
 
 ## ✨ Features
 
-*   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts from private or public groups.
-*   **🤖 AI-Powered Post Categorization:** Leverages Google's Gemini Flash model for intelligent post analysis and categorization.
+*   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts and comments from private or public groups.
+*   **🤖 AI-Powered Post & Comment Analysis:** Leverages Google's Gemini Flash model for intelligent categorization of posts and sentiment analysis of comments.
 *   **💾 Local Database Storage:** Stores scraped data and AI insights in a local SQLite database.
-*   **💻 Command-Line Interface (CLI):** Provides easy-to-use commands for scraping, AI processing, and data viewing.
+*   **📊 Data Export & Statistics:** Export data to CSV/JSON and view summary statistics.
+*   **💻 Command-Line Interface (CLI):** Provides easy-to-use commands for scraping, AI processing, data viewing, exporting, and statistics.
 
-For a detailed list of features and project goals, please see the [Full Project Details](docs/PROJECT_DETAILS.md#core-features).
+## 📝 Scraped Data Fields
 
----
+The application collects the following data from Facebook group posts and comments:
+
+### 🗨️ Posts
+- Post content
+- Post URL
+- Post timestamp
+- Author name
+- Author profile picture URL
+
+### 💬 Comments
+- Comment content
+- Comment timestamp
+- Author name
+- Author profile picture URL
+- Facebook comment ID
+
+### 🔍 AI Analysis Fields
+- Category (e.g., "Project Idea", "Problem Statement")
+- Sub-category
+- Keywords
+- Summary
+- Potential idea flag
+- Sentiment analysis (for comments)
 
 ## 🛠️ Tech Stack
 
@@ -57,9 +82,6 @@ For a detailed list of features and project goals, please see the [Full Project 
     *   `python-dotenv`
     *   `getpass`
 
-For more details, visit the [Technology Stack section in our documentation](docs/PROJECT_DETAILS.md#technology-stack).
-
----
 
 ## 📋 Prerequisites
 
@@ -69,9 +91,6 @@ Before you begin, ensure you have the following:
 *   A modern Web Browser (e.g., Chrome, Firefox)
 *   Google Cloud Project & Gemini API Key
 
-Detailed prerequisites can be found [here](docs/PROJECT_DETAILS.md#prerequisites).
-
----
 
 ## 🚀 Getting Started
 
@@ -112,9 +131,6 @@ Detailed prerequisites can be found [here](docs/PROJECT_DETAILS.md#prerequisites
 2.  **WebDriver Setup:**
     `webdriver-manager` will handle this automatically on the first run.
 
-For detailed setup and configuration instructions, please refer to the [Setup & Installation Guide](docs/PROJECT_DETAILS.md#setup--installation) and [Configuration Details](docs/PROJECT_DETAILS.md#configuration).
-
----
 
 ## ⚙️ Usage
 
@@ -126,42 +142,37 @@ python main.py <command> [options]
 
 **Available Commands:**
 
-*   `scrape`: Scrapes posts from a Facebook group.
+*   `scrape`: Scrapes posts and comments from a Facebook group.
     ```bash
     python main.py scrape --group-url "GROUP_URL" [--num-posts 50] [--headless]
     ```
-*   `process-ai`: Processes scraped posts with Gemini AI.
+*   `process-ai`: Processes scraped posts and comments with Gemini AI.
     ```bash
     python main.py process-ai
     ```
-*   `view`: Views categorized posts from the database.
+*   `view`: Views categorized posts and comments from the database.
     ```bash
     python main.py view [--category "Project Idea"] [--limit 10]
     ```
+*   `export`: Exports data to CSV or JSON format.
+    ```bash
+    python main.py export --format csv|json [--output-file OUTPUT] [--category "Project Idea"]
+    ```
+*   `stats`: Shows summary statistics about the data.
+    ```bash
+    python main.py stats
+    ```
 
-For comprehensive command usage and examples, see the [Usage Guide](docs/PROJECT_DETAILS.md#usage-cli-commands).
 
----
+## ⚠️ Important Notice
 
-## 📂 Project Structure
+**This tool is provided for educational purposes only. Users must:**
+- Comply with Facebook's Terms of Service
+- Respect privacy and data protection laws
+- Not use scraped data for commercial purposes
+- Use responsibly and ethically
 
-```
-FBScrapeIdeas/
-├── .env                # Local environment variables (Git ignored)
-├── .gitignore          # Files ignored by Git
-├── README.md           # This file
-├── requirements.txt    # Dependencies
-├── main.py             # CLI entry point
-├── ai/                 # AI related modules
-├── database/           # Database setup and CRUD operations
-├── scraper/            # Web scraping logic
-├── docs/               # Detailed documentation
-│   └── PROJECT_DETAILS.md
-└── insights.db         # SQLite database (created on run)
-```
-A more detailed project structure can be found [here](docs/PROJECT_DETAILS.md#project-structure).
-
----
+The developers assume no liability for misuse of this tool. Scraping may violate Facebook's terms - use at your own risk.
 
 ## 📚 Full Documentation
 

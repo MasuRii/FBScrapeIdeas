@@ -1,0 +1,48 @@
+{
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "comment_id": {
+                "type": "STRING",
+                "description": "The unique identifier for the comment."
+            },
+            "category": {
+                "type": "STRING",
+                "description": "The classified category of the comment.",
+                "enum": [
+                    "question",
+                    "suggestion_idea",
+                    "agreement_positive_feedback",
+                    "disagreement_negative_feedback",
+                    "information_sharing",
+                    "clarification_request",
+                    "personal_experience",
+                    "off_topic_other"
+                ]
+            },
+            "sentiment": {
+                "type": "STRING",
+                "description": "The sentiment of the comment.",
+                "enum": [
+                    "positive",
+                    "negative",
+                    "neutral"
+                ]
+            },
+            "keywords": {
+                "type": "ARRAY",
+                "description": "A list of 1-5 keywords from the comment.",
+                "items": {
+                    "type": "STRING"
+                }
+            }
+        },
+        "required": [
+            "comment_id",
+            "category",
+            "sentiment",
+            "keywords"
+        ]
+    }
+}
