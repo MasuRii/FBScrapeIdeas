@@ -128,12 +128,11 @@ def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts
                     group_url or f"ID:{group_id}",
                     num_posts,
                 )
-                scraped_posts_list = list(scraped_posts_generator)
-                
                 added_count = 0
-                if scraped_posts_list:
-                    logging.info(f"Attempting to add {len(scraped_posts_list)} scraped posts and their comments to the database.")
-                    for post in scraped_posts_list:
+                scraped_count = 0
+                for post in scraped_posts_generator:
+                    scraped_count += 1
+                    try:
                         internal_post_id = add_scraped_post(conn, post, group_id)
                         if internal_post_id:
                             added_count += 1
@@ -141,9 +140,12 @@ def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts
                                 add_comments_for_post(conn, internal_post_id, post['comments'])
                         else:
                             logging.warning(f"Failed to add post {post.get('post_url')}. Skipping comments for this post.")
-                    logging.info(f"Successfully added {added_count} new posts (and their comments) to the database.")
+                    except Exception as e:
+                        logging.error(f"Error saving post {post.get('post_url')}: {e}")
+                if scraped_count > 0:
+                    logging.info(f"Scraped {scraped_count} posts. Successfully added {added_count} new posts (and their comments) to the database.")
                 else:
-                     logging.info("No posts were scraped.")
+                    logging.info("No posts were scraped.")
             else:
                 logging.error("Could not connect to the database.")
                 
