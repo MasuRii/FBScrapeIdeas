@@ -245,7 +245,7 @@ async def handle_process_ai_command(group_id: int = None):
     else:
         logging.error("Could not connect to the database.")
 
-def handle_view_command(group_id: int = None, filters: dict = None):
+def handle_view_command(group_id: int = None, filters: dict = None, limit: int = None):
     """Displays categorized posts from the database, optionally filtered by group.
     
     Args:
@@ -261,6 +261,10 @@ def handle_view_command(group_id: int = None, filters: dict = None):
     conn = get_db_connection()
     if conn:
         try:
+            filters = filters or {}
+            if limit:
+                filters['limit'] = limit
+                
             posts = get_all_categorized_posts(conn, group_id, filters) if group_id else get_all_categorized_posts(conn, None, filters)
             if not posts:
                 print("No categorized posts found in the database.")
@@ -480,6 +484,7 @@ def main():
     view_parser.add_argument('--min-comments', type=int, help='Minimum number of comments.')
     view_parser.add_argument('--max-comments', type=int, help='Maximum number of comments.')
     view_parser.add_argument('--is-idea', action='store_true', help='Filter for posts marked as potential ideas.')
+    view_parser.add_argument('--limit', type=int, help='Limit the number of posts to display')
 
     export_parser = subparsers.add_parser('export-data', help='Export data (posts or comments) to CSV or JSON file.')
     export_parser.add_argument('--format', required=True, choices=['csv', 'json'], help='Output format: csv or json.')
@@ -525,7 +530,7 @@ def main():
                 'max_comments': args.max_comments,
                 'is_idea': args.is_idea
             }
-            handle_view_command(args.group_id, filters)
+            handle_view_command(args.group_id, filters, args.limit)
         elif args.command == 'export-data':
             handle_export_command(args)
         elif args.command == 'add-group':

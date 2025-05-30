@@ -171,6 +171,7 @@ def add_comments_for_post(db_conn: sqlite3.Connection, internal_post_id: int, co
         return False
 
 def get_all_categorized_posts(db_conn: sqlite3.Connection, group_id: int, filters: Dict) -> List[Dict]:
+    limit = filters.pop('limit', None) if filters else None
     """
     Retrieves all posts from a specific group that have been processed by AI, filtered by the provided criteria.
 
@@ -258,6 +259,10 @@ def get_all_categorized_posts(db_conn: sqlite3.Connection, group_id: int, filter
 
 
     sql += " ORDER BY Posts.posted_at DESC"
+    
+    if limit and limit > 0:
+        sql += " LIMIT ?"
+        params.append(limit)
     
     logging.debug(f"Executing SQL for get_all_categorized_posts: {sql} with params: {params}")
 
