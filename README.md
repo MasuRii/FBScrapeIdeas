@@ -11,7 +11,8 @@ A CLI-driven application to scrape and analyze Facebook group posts for insights
 
 This tool helps users identify potential capstone/thesis ideas, student problems, or other valuable insights from university Facebook group discussions by automating data collection (including posts and comments) and AI-powered categorization.
 
-![CLI Screenshot](assets/CLIScreenshot_1.png)
+![CLI Screenshot](assets/CLIScreenshot_2.png)
+
 
 ## 📖 Table of Contents
 
