@@ -2,9 +2,15 @@ import sqlite3
 import json
 import time
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+ALLOWED_FILTER_FIELDS = {
+    'ai_category',
+    'post_author_name',
+    'ai_is_potential_idea'
+}
 
 def get_db_connection(db_name='insights.db'):
     """
@@ -170,7 +176,38 @@ def add_comments_for_post(db_conn: sqlite3.Connection, internal_post_id: int, co
         db_conn.rollback()
         return False
 
-def get_all_categorized_posts(db_conn: sqlite3.Connection, group_id: int, filters: Dict) -> List[Dict]:
+def get_distinct_values(db_conn: sqlite3.Connection, field_name: str) -> List[str]:
+    """
+    Retrieves distinct non-null values from the specified field in the Posts table.
+    
+    Args:
+        db_conn: Database connection
+        field_name: The name of the field to get distinct values for
+        
+    Returns:
+        List of distinct values for the given field.
+    """
+    if field_name not in ALLOWED_FILTER_FIELDS:
+        logging.warning(f"Field {field_name} is not allowed for distinct values retrieval.")
+        return []
+
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(f"SELECT DISTINCT {field_name} FROM Posts WHERE {field_name} IS NOT NULL")
+        return [str(row[0]) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Error getting distinct values for {field_name}: {e}")
+        return []
+
+
+def get_all_categorized_posts(
+    db_conn: sqlite3.Connection,
+    group_id: int,
+    filters: Dict,
+    filter_field: Optional[str] = None,
+    filter_value: Optional[Union[str, int]] = None
+) -> List[Dict]:
+    limit = filters.pop('limit', None) if filters else None
     """
     Retrieves all posts from a specific group that have been processed by AI, filtered by the provided criteria.
 
@@ -191,56 +228,93 @@ def get_all_categorized_posts(db_conn: sqlite3.Connection, group_id: int, filter
     Returns:
         List of dictionaries representing posts that match all the filters.
     """
-    sql = """
+    base_query = """
         SELECT Posts.*,
             (SELECT COUNT(*) FROM Comments WHERE Comments.internal_post_id = Posts.internal_post_id) as comment_count
         FROM Posts
         LEFT JOIN Comments ON Posts.internal_post_id = Comments.internal_post_id
-        WHERE Posts.group_id = ? AND is_processed_by_ai = 1
     """
+    conditions = ["Posts.is_processed_by_ai = 1"]
     params = []
 
-    if filters.get('category'):
-        sql += " AND ai_category = ?"
-        params.append(filters['category'])
+    if group_id is not None:
+        conditions.append("Posts.group_id = ?")
+        params.append(group_id)
+
+    if filter_field and filter_value is not None:
+        if filter_field not in ALLOWED_FILTER_FIELDS:
+            logging.warning(f"Field {filter_field} is not allowed for filtering.")
+        else:
+            if filter_field == 'ai_is_potential_idea':
+                try:
+                    filter_value = int(filter_value)
+                except ValueError:
+                    logging.error(f"Invalid value for boolean field {filter_field}: {filter_value}")
+                    filter_value = None
+            
+            if filter_value is not None:
+                conditions.append(f"Posts.{filter_field} = ?")
+                params.append(filter_value)
 
     if filters.get('start_date'):
-        sql += " AND posted_at >= ?"
+        conditions.append("Posts.posted_at >= ?")
         params.append(filters['start_date'])
     if filters.get('end_date'):
-        sql += " AND posted_at <= ?"
+        conditions.append("Posts.posted_at <= ?")
         params.append(filters['end_date'])
 
     if filters.get('post_author'):
-        sql += " AND post_author_name LIKE ?"
+        conditions.append("Posts.post_author_name LIKE ?")
         params.append('%' + filters['post_author'] + '%')
 
+
     if filters.get('comment_author'):
-        sql += " AND Comments.commenter_name LIKE ?"
+        conditions.append("Comments.commenter_name LIKE ?")
         params.append('%' + filters['comment_author'] + '%')
 
     if filters.get('keyword'):
         keyword_pattern = '%' + filters['keyword'] + '%'
-        sql += " AND (Posts.post_content_raw LIKE ? OR Comments.comment_text LIKE ?)"
+        conditions.append("(Posts.post_content_raw LIKE ? OR Comments.comment_text LIKE ?)")
         params.extend([keyword_pattern, keyword_pattern])
-
-    if filters.get('min_comments') is not None:
-        sql += " AND comment_count >= ?"
-        params.append(filters['min_comments'])
-    if filters.get('max_comments') is not None:
-        sql += " AND comment_count <= ?"
-        params.append(filters['max_comments'])
-
-    if filters.get('is_idea'):
-        sql += " AND ai_is_potential_idea = 1"
+    
+    if conditions:
+        sql = base_query + " WHERE " + " AND ".join(conditions)
+    else:
+        sql = base_query
 
     sql += " GROUP BY Posts.internal_post_id"
+
+    having_conditions = []
+    if filters.get('min_comments') is not None:
+        having_conditions.append("comment_count >= ?")
+        params.append(filters['min_comments'])
+    if filters.get('max_comments') is not None:
+        having_conditions.append("comment_count <= ?")
+        params.append(filters['max_comments'])
     
-    sql += " ORDER BY posted_at DESC"
+    if having_conditions:
+        sql += " HAVING " + " AND ".join(having_conditions)
+
+    if filters.get('is_idea'):
+        if 'is_idea' in filters and filters['is_idea']:
+             if "Posts.ai_is_potential_idea = 1" not in " AND ".join(conditions) and filters.get('is_idea'):
+                conditions.append("Posts.ai_is_potential_idea = 1")
+                sql = base_query + " WHERE " + " AND ".join(conditions) + " GROUP BY Posts.internal_post_id"
+                if having_conditions:
+                    sql += " HAVING " + " AND ".join(having_conditions)
+
+
+    sql += " ORDER BY Posts.posted_at DESC"
+    
+    if limit and limit > 0:
+        sql += " LIMIT ?"
+        params.append(limit)
+    
+    logging.debug(f"Executing SQL for get_all_categorized_posts: {sql} with params: {params}")
 
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql, [group_id] + params)
+        cursor.execute(sql, params)
         results = []
         for row in cursor.fetchall():
             post_dict = dict(row)

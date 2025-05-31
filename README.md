@@ -29,16 +29,25 @@ This tool helps users identify potential capstone/thesis ideas, student problems
     - [Configuration](#configuration)
   - [⚙️ Usage](#️-usage)
   - [⚠️ Important Notice](#️-important-notice)
-  - [📚 Full Documentation](#-full-documentation)
-
 
 ## ✨ Features
 
 *   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts and comments from private or public groups.
 *   **🤖 AI-Powered Post & Comment Analysis:** Leverages Google's Gemini Flash model for intelligent categorization of posts and sentiment analysis of comments.
 *   **💾 Local Database Storage:** Stores scraped data and AI insights in a local SQLite database.
-*   **📊 Data Export & Statistics:** Export data to CSV/JSON and view summary statistics.
-*   **💻 Command-Line Interface (CLI):** Provides easy-to-use commands for scraping, AI processing, data viewing, exporting, and statistics.
+*   **📊 Data Export & Statistics:** Export data to CSV/JSON formats and view detailed statistics.
+*   **💻 Advanced CLI Interface:**
+    *   **Dynamic Filtering:** Filter posts by category, author, or potential ideas
+    *   **Pagination:** Limit results with `--limit` option
+    *   **Interactive Menus:** User-friendly command selection
+*   **⚡ Performance Optimizations:**
+    *   Parallel processing for faster scraping
+    *   Asynchronous AI batch processing
+    *   Incremental data saving during scraping
+*   **📤 Enhanced Export Capabilities:**
+    *   Flexible output paths
+    *   Multiple export formats (CSV/JSON)
+    *   Automatic directory creation
 
 ## 📝 Scraped Data Fields
 
@@ -74,11 +83,11 @@ The application collects the following data from Facebook group posts and commen
     *   `webdriver-manager`
     *   `BeautifulSoup4`
 *   **AI & Machine Learning:**
-    *   `google-generativeai` (Google Gemini Flash)
+    *   `google-generativeai`
 *   **Database:**
     *   `SQLite`
 *   **CLI:**
-    *   `click` (or `argparse`)
+    *   `click`
 *   **Utilities:**
     *   `python-dotenv`
     *   `getpass`
@@ -124,10 +133,9 @@ Before you begin, ensure you have the following:
     ```dotenv
     # .env
     GOOGLE_API_KEY=YOUR_GEMINI_API_KEY_HERE
-    FB_USER=YOUR_FACEBOOK_EMAIL_OR_USERNAME
-    FB_PASS=YOUR_FACEBOOK_PASSWORD
     ```
     (Use `.env.example` as a template)
+    > Note: Facebook credentials are entered securely during scraping
 
 2.  **WebDriver Setup:**
     `webdriver-manager` will handle this automatically on the first run.
@@ -147,19 +155,28 @@ python main.py <command> [options]
     ```bash
     python main.py scrape --group-url "GROUP_URL" [--num-posts 50] [--headless]
     ```
+    > You'll be prompted securely for Facebook credentials
+    
 *   `process-ai`: Processes scraped posts and comments with Gemini AI.
     ```bash
     python main.py process-ai
     ```
-*   `view`: Views categorized posts and comments from the database.
+    
+*   `view`: Views categorized posts and comments with filtering options:
     ```bash
-    python main.py view [--category "Project Idea"] [--limit 10]
+    python main.py view [--category CATEGORY] [--author AUTHOR] [--limit N]
     ```
-*   `export`: Exports data to CSV or JSON format.
+    *   Interactive field and value selection
+    *   Pagination support
+    
+*   `export`: Exports data to CSV or JSON format:
     ```bash
-    python main.py export --format csv|json [--output-file OUTPUT] [--category "Project Idea"]
+    python main.py export --format csv|json [--output-path PATH] [--category CATEGORY]
     ```
-*   `stats`: Shows summary statistics about the data.
+    *   Handles both posts and comments
+    *   Automatic directory creation
+    
+*   `stats`: Shows comprehensive statistics about collected data:
     ```bash
     python main.py stats
     ```
@@ -174,10 +191,6 @@ python main.py <command> [options]
 - Use responsibly and ethically
 
 The developers assume no liability for misuse of this tool. Scraping may violate Facebook's terms - use at your own risk.
-
-## 📚 Full Documentation
-
-For a comprehensive understanding of the project, including its architecture, detailed setup, advanced usage, and ethical considerations, please refer to the [**Full Project Documentation**](docs/PROJECT_DETAILS.md).
 
 <!-- Shields.io links -->
 [python-shield]: https://img.shields.io/badge/Python-3.9%2B-blue.svg
