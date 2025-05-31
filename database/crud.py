@@ -2,9 +2,15 @@ import sqlite3
 import json
 import time
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+ALLOWED_FILTER_FIELDS = {
+    'ai_category',
+    'post_author_name',
+    'ai_is_potential_idea'
+}
 
 def get_db_connection(db_name='insights.db'):
     """
@@ -170,7 +176,37 @@ def add_comments_for_post(db_conn: sqlite3.Connection, internal_post_id: int, co
         db_conn.rollback()
         return False
 
-def get_all_categorized_posts(db_conn: sqlite3.Connection, group_id: int, filters: Dict) -> List[Dict]:
+def get_distinct_values(db_conn: sqlite3.Connection, field_name: str) -> List[str]:
+    """
+    Retrieves distinct non-null values from the specified field in the Posts table.
+    
+    Args:
+        db_conn: Database connection
+        field_name: The name of the field to get distinct values for
+        
+    Returns:
+        List of distinct values for the given field.
+    """
+    if field_name not in ALLOWED_FILTER_FIELDS:
+        logging.warning(f"Field {field_name} is not allowed for distinct values retrieval.")
+        return []
+
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(f"SELECT DISTINCT {field_name} FROM Posts WHERE {field_name} IS NOT NULL")
+        return [str(row[0]) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Error getting distinct values for {field_name}: {e}")
+        return []
+
+
+def get_all_categorized_posts(
+    db_conn: sqlite3.Connection,
+    group_id: int,
+    filters: Dict,
+    filter_field: Optional[str] = None,
+    filter_value: Optional[Union[str, int]] = None
+) -> List[Dict]:
     limit = filters.pop('limit', None) if filters else None
     """
     Retrieves all posts from a specific group that have been processed by AI, filtered by the provided criteria.
@@ -205,10 +241,20 @@ def get_all_categorized_posts(db_conn: sqlite3.Connection, group_id: int, filter
         conditions.append("Posts.group_id = ?")
         params.append(group_id)
 
-    if filters.get('category'):
-        conditions.append("Posts.ai_category = ?")
-        sql += " AND ai_category = ?"
-        params.append(filters['category'])
+    if filter_field and filter_value is not None:
+        if filter_field not in ALLOWED_FILTER_FIELDS:
+            logging.warning(f"Field {filter_field} is not allowed for filtering.")
+        else:
+            if filter_field == 'ai_is_potential_idea':
+                try:
+                    filter_value = int(filter_value)
+                except ValueError:
+                    logging.error(f"Invalid value for boolean field {filter_field}: {filter_value}")
+                    filter_value = None
+            
+            if filter_value is not None:
+                conditions.append(f"Posts.{filter_field} = ?")
+                params.append(filter_value)
 
     if filters.get('start_date'):
         conditions.append("Posts.posted_at >= ?")

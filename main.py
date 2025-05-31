@@ -10,7 +10,8 @@ from database.crud import (
     get_unprocessed_posts, update_post_with_ai_results,
     get_all_categorized_posts, get_comments_for_post,
     get_unprocessed_comments, update_comment_with_ai_results,
-    add_group, get_group_by_id, list_groups, remove_group
+    add_group, get_group_by_id, list_groups, remove_group,
+    get_distinct_values
 )
 from database.db_setup import init_db
 from typing import Optional
@@ -246,17 +247,80 @@ async def handle_process_ai_command(group_id: int = None):
         logging.error("Could not connect to the database.")
 
 def handle_view_command(group_id: int = None, filters: dict = None, limit: int = None):
-    """Displays categorized posts from the database, optionally filtered by group.
+    """Displays posts from the database, optionally filtered by group and other criteria.
     
     Args:
         group_id: Optional ID of the group to view posts from
         filters: Dictionary of additional filters to apply
+        limit: Maximum number of posts to display
     """
-    filters = filters or {}
-    if group_id:
-        print(f"Running view command for group {group_id} with filters: {filters}")
+    while True:
+        filterable_fields = {
+            'ai_category': 'Category',
+            'post_author_name': 'Author Name',
+            'ai_is_potential_idea': 'Potential Idea'
+        }
+        print("\nAvailable filter fields:")
+        for i, (field_key, field_label) in enumerate(filterable_fields.items(), start=1):
+            print(f"{i}. {field_label}")
+        print("0. Apply filters and view posts")
+        print("-1. Clear all filters")
+        
+        try:
+            choice = int(input("Select a field to filter by or 0 to view: "))
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            continue
+        
+        if choice == 0:
+            break
+        elif choice == -1:
+            filters = {}
+            print("All filters cleared.")
+        elif 1 <= choice <= len(filterable_fields):
+            selected_key = list(filterable_fields.keys())[choice-1]
+            selected_label = filterable_fields[selected_key]
+            
+            conn = get_db_connection()
+            if conn:
+                try:
+                    distinct_values = get_distinct_values(conn, selected_key)
+                    if not distinct_values:
+                        print(f"No distinct values found for {selected_label}.")
+                    else:
+                        print(f"\nAvailable {selected_label} values:")
+                        for i, value in enumerate(distinct_values, start=1):
+                            print(f"{i}. {value}")
+                        print("0. Back to field selection")
+                        
+                        try:
+                            value_choice = int(input(f"Select a {selected_label} value to filter by: "))
+                        except ValueError:
+                            print("Invalid input. No value selected.")
+                            value_choice = 0
+                        
+                        if 1 <= value_choice <= len(distinct_values):
+                            selected_value = distinct_values[value_choice-1]
+                            print(f"Added filter: {selected_label} = {selected_value}")
+                            filters[selected_key] = selected_value
+                        elif value_choice != 0:
+                            print("Invalid choice.")
+                except Exception as e:
+                    print(f"Error retrieving distinct values: {e}")
+                finally:
+                    conn.close()
+            else:
+                print("Could not connect to the database.")
+        else:
+            print("Invalid choice. Please try again.")
+    
+    if filters:
+        print("\nActive filters:")
+        for key, value in filters.items():
+            field_label = filterable_fields.get(key, key)
+            print(f"- {field_label}: {value}")
     else:
-        print(f"Running view command with filters: {filters}")
+        print("\nNo active filters")
     
     conn = get_db_connection()
     if conn:
@@ -265,7 +329,10 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
             if limit:
                 filters['limit'] = limit
                 
-            posts = get_all_categorized_posts(conn, group_id, filters) if group_id else get_all_categorized_posts(conn, None, filters)
+            filter_field = filters.pop('field', None)
+            filter_value = filters.pop('value', None) if 'value' in filters else None
+
+            posts = get_all_categorized_posts(conn, group_id, filters, filter_field, filter_value) if group_id else get_all_categorized_posts(conn, None, filters, filter_field, filter_value)
             if not posts:
                 print("No categorized posts found in the database.")
                 return
@@ -473,7 +540,7 @@ def main():
     process_ai_parser = subparsers.add_parser('process-ai', help='Fetch unprocessed posts and comments, send them to Gemini for categorization, and update DB.')
     process_ai_parser.add_argument('--group-id', type=int, help='Only process posts from this group ID.')
 
-    view_parser = subparsers.add_parser('view', help='Display categorized posts from the database.')
+    view_parser = subparsers.add_parser('view', help='Display posts from the database.')
     view_parser.add_argument('--group-id', type=int, help='Only show posts from this group ID.')
     view_parser.add_argument('--category', help='Optional filter to display posts of a specific category.')
     view_parser.add_argument('--start-date', help='Filter posts by start date (YYYY-MM-DD).')
@@ -548,7 +615,7 @@ def main():
             print("\nFB Scrape Ideas Menu:")
             print("1. Scrape Posts from Facebook Group")
             print("2. Process Scraped Posts and Comments with AI")
-            print("3. View Categorized Posts")
+            print("3. View Posts")
             print("4. Manage Groups")
             print("5. Exit")
             
