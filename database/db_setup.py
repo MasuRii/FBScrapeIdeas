@@ -15,6 +15,9 @@ def init_db(db_name='insights.db'):
     try:
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
+        
+        # Enable foreign key constraint enforcement
+        cursor.execute('PRAGMA foreign_keys = ON')
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS Groups (

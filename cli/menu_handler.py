@@ -6,6 +6,8 @@ Handles both interactive menu and command-line argument modes.
 import argparse
 import asyncio
 import os
+import re
+from datetime import datetime
 
 ASCII_ART = r"""
  _____  ____        _____   __  ____    ____  ____    ___      ____  ___      ___   ____  _____
@@ -16,6 +18,84 @@ ASCII_ART = r"""
 |  T   |     |     \    \     ||  .  Y|  |  ||  |  |     T     j  l |     ||     T|  |  |\    |
 l__j   l_____j      \___j\____jl__j\_jl__j__jl__j  l_____j    |____jl_____jl_____jl__j__j \___j
 """
+
+# --- Input Validation Helpers ---
+
+def validate_facebook_url(url: str) -> bool:
+    """Validates if the URL is a valid Facebook group URL.
+    
+    Args:
+        url: URL string to validate
+        
+    Returns:
+        True if valid Facebook URL, False otherwise
+    """
+    if not url:
+        return False
+    # Accept facebook.com or fb.com URLs
+    pattern = r'^https?://(www\.)?(facebook\.com|fb\.com)/groups/[\w.-]+/?.*$'
+    return bool(re.match(pattern, url, re.IGNORECASE))
+
+
+def validate_date_format(date_str: str) -> bool:
+    """Validates if the date string is in YYYY-MM-DD format.
+    
+    Args:
+        date_str: Date string to validate
+        
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not date_str:
+        return True  # Empty is acceptable for optional fields
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
+
+
+def validate_positive_integer(value: str) -> tuple[bool, int]:
+    """Validates if the string is a positive integer.
+    
+    Args:
+        value: String to validate
+        
+    Returns:
+        Tuple of (is_valid, parsed_value)
+    """
+    if not value:
+        return True, 0
+    if value.isdigit() and int(value) > 0:
+        return True, int(value)
+    return False, 0
+
+
+def get_validated_input(prompt: str, validator, error_msg: str, allow_empty: bool = True) -> str:
+    """Gets user input with validation and retry logic.
+    
+    Args:
+        prompt: Input prompt to display
+        validator: Function that returns True if input is valid
+        error_msg: Error message to display on invalid input
+        allow_empty: Whether empty input is allowed
+        
+    Returns:
+        Validated input string
+    """
+    while True:
+        value = input(prompt).strip()
+        if not value and allow_empty:
+            return value
+        if not value and not allow_empty:
+            print("This field is required. Please enter a value.")
+            continue
+        if validator(value):
+            return value
+        print(error_msg)
+
+
+# --- Core Functions ---
 
 def clear_screen():
     """Clears the terminal screen."""
@@ -102,59 +182,110 @@ def run_interactive_menu(command_handlers):
         print("   - View Statistics & Trends")
         print("\n5. Exit")
         
-        choice = input("\nEnter your choice: ").strip()
+        choice = input("\nEnter your choice (1-5): ").strip()
         
         if choice == '1':
-            group_url = input("Enter Facebook Group URL: ").strip()
-            num_posts_input = input("Enter number of posts to scrape (default: 20, press Enter for default): ").strip()
-            num_posts = int(num_posts_input) if num_posts_input.isdigit() else 20
-            headless_input = input("Run in headless mode? (yes/no, default: no): ").strip().lower()
-            headless = headless_input == 'yes'
-            command_handlers['scrape'](group_url=group_url, num_posts=num_posts, headless=headless)
+            try:
+                # Validate Facebook URL
+                group_url = get_validated_input(
+                    "Enter Facebook Group URL: ",
+                    validate_facebook_url,
+                    "Invalid URL. Please enter a valid Facebook group URL (e.g., https://facebook.com/groups/groupname)",
+                    allow_empty=False
+                )
+                
+                # Validate number of posts
+                num_posts_input = input("Enter number of posts to scrape (default: 20, press Enter for default): ").strip()
+                if num_posts_input:
+                    is_valid, num_posts = validate_positive_integer(num_posts_input)
+                    if not is_valid:
+                        print("Invalid number. Using default value of 20.")
+                        num_posts = 20
+                else:
+                    num_posts = 20
+                
+                headless_input = input("Run in headless mode? (yes/no, default: no): ").strip().lower()
+                headless = headless_input == 'yes'
+                
+                command_handlers['scrape'](group_url=group_url, num_posts=num_posts, headless=headless)
+            except KeyboardInterrupt:
+                print("\nOperation cancelled by user.")
+            except Exception as e:
+                print(f"\nError during scraping: {e}")
             input("\nPress Enter to continue...")
+            
         elif choice == '2':
-            asyncio.run(command_handlers['process_ai']())
+            try:
+                asyncio.run(command_handlers['process_ai']())
+            except KeyboardInterrupt:
+                print("\nOperation cancelled by user.")
+            except Exception as e:
+                print(f"\nError during AI processing: {e}")
             input("\nPress Enter to continue...")
+            
         elif choice == '3':
-            filters = {}
-            category_filter = input("Enter category to filter by (optional, press Enter for all): ").strip()
-            if category_filter:
-                filters['category'] = category_filter
-            
-            start_date = input("Start date (YYYY-MM-DD, optional): ").strip()
-            if start_date:
-                filters['start_date'] = start_date
-            
-            end_date = input("End date (YYYY-MM-DD, optional): ").strip()
-            if end_date:
-                filters['end_date'] = end_date
-            
-            post_author = input("Filter by post author name (optional): ").strip()
-            if post_author:
-                filters['post_author'] = post_author
-            
-            comment_author = input("Filter by comment author name (optional): ").strip()
-            if comment_author:
-                filters['comment_author'] = comment_author
-            
-            keyword = input("Keyword search (optional): ").strip()
-            if keyword:
-                filters['keyword'] = keyword
-            
-            min_comments = input("Minimum comments (optional): ").strip()
-            if min_comments.isdigit():
-                filters['min_comments'] = int(min_comments)
-            
-            max_comments = input("Maximum comments (optional): ").strip()
-            if max_comments.isdigit():
-                filters['max_comments'] = int(max_comments)
-            
-            is_idea = input("Show only potential ideas? (yes/no, default: no): ").strip().lower()
-            if is_idea == 'yes':
-                filters['is_idea'] = True
-            
-            command_handlers['view'](filters=filters)
+            try:
+                filters = {}
+                category_filter = input("Enter category to filter by (optional, press Enter for all): ").strip()
+                if category_filter:
+                    filters['category'] = category_filter
+                
+                # Validate date inputs
+                start_date = get_validated_input(
+                    "Start date (YYYY-MM-DD, optional): ",
+                    validate_date_format,
+                    "Invalid date format. Please use YYYY-MM-DD (e.g., 2024-01-15)"
+                )
+                if start_date:
+                    filters['start_date'] = start_date
+                
+                end_date = get_validated_input(
+                    "End date (YYYY-MM-DD, optional): ",
+                    validate_date_format,
+                    "Invalid date format. Please use YYYY-MM-DD (e.g., 2024-01-15)"
+                )
+                if end_date:
+                    filters['end_date'] = end_date
+                
+                post_author = input("Filter by post author name (optional): ").strip()
+                if post_author:
+                    filters['post_author'] = post_author
+                
+                comment_author = input("Filter by comment author name (optional): ").strip()
+                if comment_author:
+                    filters['comment_author'] = comment_author
+                
+                keyword = input("Keyword search (optional): ").strip()
+                if keyword:
+                    filters['keyword'] = keyword
+                
+                min_comments = input("Minimum comments (optional): ").strip()
+                if min_comments:
+                    is_valid, value = validate_positive_integer(min_comments)
+                    if is_valid and value > 0:
+                        filters['min_comments'] = value
+                    elif min_comments:
+                        print("Invalid number for minimum comments, ignoring filter.")
+                
+                max_comments = input("Maximum comments (optional): ").strip()
+                if max_comments:
+                    is_valid, value = validate_positive_integer(max_comments)
+                    if is_valid and value > 0:
+                        filters['max_comments'] = value
+                    elif max_comments:
+                        print("Invalid number for maximum comments, ignoring filter.")
+                
+                is_idea = input("Show only potential ideas? (yes/no, default: no): ").strip().lower()
+                if is_idea == 'yes':
+                    filters['is_idea'] = True
+                
+                command_handlers['view'](filters=filters)
+            except KeyboardInterrupt:
+                print("\nOperation cancelled by user.")
+            except Exception as e:
+                print(f"\nError viewing posts: {e}")
             input("\nPress Enter to continue...")
+            
         elif choice == '4':
             print("\nData Management Options:")
             print("1. Add New Facebook Group")
@@ -164,40 +295,54 @@ def run_interactive_menu(command_handlers):
             print("5. View Statistics")
             print("6. Back to Main Menu")
             
-            sub_choice = input("\nEnter your choice: ").strip()
+            sub_choice = input("\nEnter your choice (1-6): ").strip()
             
-            if sub_choice == '1':
-                name = input("Enter group name: ").strip()
-                url = input("Enter group URL: ").strip()
-                command_handlers['add_group'](name, url)
-            elif sub_choice == '2':
-                command_handlers['list_groups']()
-            elif sub_choice == '3':
-                group_id = input("Enter group ID to remove: ").strip()
-                if group_id.isdigit():
-                    command_handlers['remove_group'](int(group_id))
-                else:
-                    print("Invalid group ID. Must be a number.")
-            elif sub_choice == '4':
-                format_choice = input("Choose format (csv/json): ").strip().lower()
-                if format_choice not in ['csv', 'json']:
-                    print("Invalid format. Must be 'csv' or 'json'")
-                else:
-                    print("\nOutput File Path Guidelines:")
-                    print("- For Windows: Use any of these formats:")
-                    print("  1. Full path with filename: C:\\MyFolder\\data.csv")
-                    print("  2. Directory path only: C:\\MyFolder")
-                    print("  3. Drive only: E:\\ (will use default filename)")
-                    print("\nOutput Files:")
-                    print("- Creates separate files for each data type:")
-                    print("  * [path]_groups.[ext]  - Group information")
-                    print("  * [path]_posts.[ext]   - Post data")
-                    print("  * [path]_comments.[ext] - Comment data")
-                    print("  * [path]_all.[ext]     - Combined data")
+            try:
+                if sub_choice == '1':
+                    name = input("Enter group name: ").strip()
+                    if not name:
+                        print("Group name cannot be empty.")
+                    else:
+                        url = get_validated_input(
+                            "Enter group URL: ",
+                            validate_facebook_url,
+                            "Invalid URL. Please enter a valid Facebook group URL.",
+                            allow_empty=False
+                        )
+                        command_handlers['add_group'](name, url)
+                        
+                elif sub_choice == '2':
+                    command_handlers['list_groups']()
                     
-                    output_file = input("\nEnter output file path: ").strip()
-                    if output_file:
-                        try:
+                elif sub_choice == '3':
+                    group_id_input = input("Enter group ID to remove: ").strip()
+                    is_valid, group_id = validate_positive_integer(group_id_input)
+                    if is_valid and group_id > 0:
+                        command_handlers['remove_group'](group_id)
+                    else:
+                        print("Invalid group ID. Must be a positive number.")
+                        
+                elif sub_choice == '4':
+                    format_choice = input("Choose format (csv/json): ").strip().lower()
+                    if format_choice not in ['csv', 'json']:
+                        print("Invalid format. Must be 'csv' or 'json'")
+                    else:
+                        print("\nOutput File Path Guidelines:")
+                        print("- For Windows: Use any of these formats:")
+                        print("  1. Full path with filename: C:\\MyFolder\\data.csv")
+                        print("  2. Directory path only: C:\\MyFolder")
+                        print("  3. Drive only: E:\\ (will use default filename)")
+                        print("\nOutput Files:")
+                        print("- Creates separate files for each data type:")
+                        print("  * [path]_groups.[ext]  - Group information")
+                        print("  * [path]_posts.[ext]   - Post data")
+                        print("  * [path]_comments.[ext] - Comment data")
+                        print("  * [path]_all.[ext]     - Combined data")
+                        
+                        output_file = input("\nEnter output file path: ").strip()
+                        if not output_file:
+                            print("Output path cannot be empty.")
+                        else:
                             args = type('Args', (), {
                                 'format': format_choice,
                                 'output': output_file,
@@ -213,22 +358,26 @@ def run_interactive_menu(command_handlers):
                                 'is_idea': False
                             })()
                             command_handlers['export'](args)
-                            input("\nPress Enter to continue...")
-                        except Exception as e:
-                            print(f"Export failed: {str(e)}")
-                            input("\nPress Enter to continue...")
-            elif sub_choice == '5':
-                command_handlers['stats']()
-            elif sub_choice == '6':
-                continue
-            else:
-                print("Invalid choice.")
+                            
+                elif sub_choice == '5':
+                    command_handlers['stats']()
+                    
+                elif sub_choice == '6':
+                    continue
+                else:
+                    print("Invalid choice. Please enter a number between 1-6.")
+                    
+            except KeyboardInterrupt:
+                print("\nOperation cancelled by user.")
+            except Exception as e:
+                print(f"\nError: {e}")
             input("\nPress Enter to continue...")
+            
         elif choice == '5':
             print("Exiting application. Goodbye!")
             break
         else:
-            print("Invalid choice. Please try again.")
+            print("Invalid choice. Please enter a number between 1-5.")
             input("\nPress Enter to continue...")
 
 def handle_cli_arguments(args, command_handlers):
@@ -238,34 +387,47 @@ def handle_cli_arguments(args, command_handlers):
         args: Parsed command-line arguments from argparse
         command_handlers: Dict mapping command names to their handler functions
     """
-    if args.command:
-        if args.command == 'scrape':
-            command_handlers['scrape'](args.group_url, args.group_id, args.num_posts, args.headless)
-        elif args.command == 'process-ai':
-            asyncio.run(command_handlers['process_ai'](args.group_id))
-        elif args.command == 'view':
-            filters = {
-                'category': args.category,
-                'start_date': args.start_date,
-                'end_date': args.end_date,
-                'post_author': args.post_author,
-                'comment_author': args.comment_author,
-                'keyword': args.keyword,
-                'min_comments': args.min_comments,
-                'max_comments': args.max_comments,
-                'is_idea': args.is_idea
-            }
-            command_handlers['view'](args.group_id, filters, args.limit)
-        elif args.command == 'export-data':
-            command_handlers['export'](args)
-        elif args.command == 'add-group':
-            command_handlers['add_group'](args.name, args.url)
-        elif args.command == 'list-groups':
-            command_handlers['list_groups']()
-        elif args.command == 'remove-group':
-            command_handlers['remove_group'](args.id)
-        elif args.command == 'stats':
-            command_handlers['stats']()
+    try:
+        if args.command:
+            if args.command == 'scrape':
+                # Validate URL if provided via CLI
+                if args.group_url and not validate_facebook_url(args.group_url):
+                    print("Error: Invalid Facebook group URL provided.")
+                    return
+                command_handlers['scrape'](args.group_url, args.group_id, args.num_posts, args.headless)
+            elif args.command == 'process-ai':
+                asyncio.run(command_handlers['process_ai'](args.group_id))
+            elif args.command == 'view':
+                filters = {
+                    'category': args.category,
+                    'start_date': args.start_date,
+                    'end_date': args.end_date,
+                    'post_author': args.post_author,
+                    'comment_author': args.comment_author,
+                    'keyword': args.keyword,
+                    'min_comments': args.min_comments,
+                    'max_comments': args.max_comments,
+                    'is_idea': args.is_idea
+                }
+                command_handlers['view'](args.group_id, filters, args.limit)
+            elif args.command == 'export-data':
+                command_handlers['export'](args)
+            elif args.command == 'add-group':
+                # Validate URL for add-group command
+                if not validate_facebook_url(args.url):
+                    print("Error: Invalid Facebook group URL provided.")
+                    return
+                command_handlers['add_group'](args.name, args.url)
+            elif args.command == 'list-groups':
+                command_handlers['list_groups']()
+            elif args.command == 'remove-group':
+                command_handlers['remove_group'](args.id)
+            elif args.command == 'stats':
+                command_handlers['stats']()
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user.")
+    except Exception as e:
+        print(f"Error executing command '{args.command}': {e}")
 
 def run_cli(command_handlers):
     """Main entry point for the CLI interface.

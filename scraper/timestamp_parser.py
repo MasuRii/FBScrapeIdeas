@@ -1,6 +1,6 @@
 import dateparser
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ def parse_fb_timestamp(timestamp_str: str) -> datetime:
             settings={
                 'TIMEZONE': 'UTC',
                 'RETURN_AS_TIMEZONE_AWARE': True,
-                'RELATIVE_BASE': datetime.utcnow()
+                'RELATIVE_BASE': datetime.now(timezone.utc)
             }
         )
         

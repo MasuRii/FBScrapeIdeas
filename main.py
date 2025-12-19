@@ -2,6 +2,7 @@ import argparse
 import sqlite3
 import logging
 import asyncio
+from datetime import datetime, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -14,7 +15,17 @@ from database.crud import (
     get_distinct_values
 )
 from database.db_setup import init_db
+from database.stats_queries import get_all_statistics
 from typing import Optional
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.getLogger('WDM').setLevel(logging.WARNING)
+logging.getLogger('webdriver_manager').setLevel(logging.WARNING)
+
+# Current Chrome user-agent string (Chrome 131)
+CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
 
 def get_or_create_group_id(conn: sqlite3.Connection, group_url: str, group_name: str = None) -> Optional[int]:
     """
@@ -51,9 +62,6 @@ def get_or_create_group_id(conn: sqlite3.Connection, group_url: str, group_name:
         conn.rollback()
         return None
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logging.getLogger('WDM').setLevel(logging.WARNING)
-logging.getLogger('webdriver_manager').setLevel(logging.WARNING)
 
 def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts: int = 20, headless: bool = False):
     """Handles the Facebook scraping process for a specific group.
@@ -70,9 +78,7 @@ def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts
 
     logging.info(f"Running scrape command (fetching {num_posts} posts). Headless: {headless}")
     
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from webdriver_manager.chrome import ChromeDriverManager
+    # Import scraper-specific modules here to avoid circular imports
     from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group
     from config import get_facebook_credentials
 
@@ -89,7 +95,7 @@ def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--window-size=1920,1080')
         
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        options.add_argument(f"user-agent={CHROME_USER_AGENT}")
 
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
@@ -137,15 +143,24 @@ def handle_scrape_command(group_url: str = None, group_id: int = None, num_posts
         else:
             logging.error("Facebook login failed. Cannot proceed with scraping.")
 
+    except ValueError as e:
+        logging.error(f"Configuration error: {e}")
     except Exception as e:
         logging.error(f"An error occurred during the scraping process: {e}", exc_info=True)
     finally:
         if driver:
-            driver.quit()
-            logging.info("WebDriver closed.")
+            try:
+                driver.quit()
+                logging.info("WebDriver closed.")
+            except Exception as e:
+                logging.warning(f"Error closing WebDriver: {e}")
         if conn:
-            conn.close()
-            logging.info("Database connection closed.")
+            try:
+                conn.close()
+                logging.info("Database connection closed.")
+            except Exception as e:
+                logging.warning(f"Error closing database connection: {e}")
+
 
 async def handle_process_ai_command(group_id: int = None):
     """Handles the AI processing of scraped posts for a specific group.
@@ -158,22 +173,26 @@ async def handle_process_ai_command(group_id: int = None):
     logging.info("Running process-ai command...")
     
     conn = get_db_connection()
-    if conn:
-        try:
-            unprocessed_posts = get_unprocessed_posts(conn, group_id)
-            if not unprocessed_posts:
-                logging.info("No unprocessed posts found in the database.")
-            else:
-                logging.info(f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database.")
-                for i, post in enumerate(unprocessed_posts[:min(5, len(unprocessed_posts))]):
-                    logging.debug(f"  Post {i+1}: ID={post.get('internal_post_id')}, URL={post.get('post_url')}")
+    if not conn:
+        logging.error("Could not connect to the database.")
+        return
+        
+    try:
+        unprocessed_posts = get_unprocessed_posts(conn, group_id)
+        if not unprocessed_posts:
+            logging.info("No unprocessed posts found in the database.")
+        else:
+            logging.info(f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database.")
+            for i, post in enumerate(unprocessed_posts[:min(5, len(unprocessed_posts))]):
+                logging.debug(f"  Post {i+1}: ID={post.get('internal_post_id')}, URL={post.get('post_url')}")
 
-                logging.info(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
-                post_batches = create_post_batches(unprocessed_posts)
-                
-                processed_count = 0
-                for i, batch in enumerate(post_batches):
-                    logging.info(f"Processing batch {i+1}/{len(post_batches)} with {len(batch)} posts...")
+            logging.info(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
+            post_batches = create_post_batches(unprocessed_posts)
+            
+            processed_count = 0
+            for i, batch in enumerate(post_batches):
+                logging.info(f"Processing batch {i+1}/{len(post_batches)} with {len(batch)} posts...")
+                try:
                     ai_results = await categorize_posts_batch(batch)
                     
                     if ai_results:
@@ -192,19 +211,22 @@ async def handle_process_ai_command(group_id: int = None):
                                 logging.error(f"AI result missing 'internal_post_id'. Cannot update database for result: {result}")
                     else:
                         logging.warning(f"No AI results returned or mapped for batch {i+1}.")
+                except Exception as batch_e:
+                    logging.error(f"Error processing batch {i+1}: {batch_e}")
 
-                logging.info(f"Successfully processed {processed_count} posts with AI.")
-            
-            unprocessed_comments = get_unprocessed_comments(conn)
-            if not unprocessed_comments:
-                logging.info("No unprocessed comments found in the database.")
-            else:
-                logging.info(f"Found {len(unprocessed_comments)} unprocessed comments. Processing in batches...")
-                batch_size = 5
-                comment_batches = [unprocessed_comments[i:i+batch_size] for i in range(0, len(unprocessed_comments), batch_size)]
-                processed_comment_count = 0
-                for i, batch in enumerate(comment_batches):
-                    logging.info(f"Processing comment batch {i+1}/{len(comment_batches)} with {len(batch)} comments...")
+            logging.info(f"Successfully processed {processed_count} posts with AI.")
+        
+        unprocessed_comments = get_unprocessed_comments(conn)
+        if not unprocessed_comments:
+            logging.info("No unprocessed comments found in the database.")
+        else:
+            logging.info(f"Found {len(unprocessed_comments)} unprocessed comments. Processing in batches...")
+            batch_size = 5
+            comment_batches = [unprocessed_comments[i:i+batch_size] for i in range(0, len(unprocessed_comments), batch_size)]
+            processed_comment_count = 0
+            for i, batch in enumerate(comment_batches):
+                logging.info(f"Processing comment batch {i+1}/{len(comment_batches)} with {len(batch)} comments...")
+                try:
                     ai_comment_results = process_comments_with_gemini(batch)
                     if ai_comment_results:
                         logging.info(f"Received {len(ai_comment_results)} mapped AI results for comment batch {i+1}.")
@@ -220,15 +242,19 @@ async def handle_process_ai_command(group_id: int = None):
                                 logging.error(f"AI result missing 'comment_id'. Cannot update database for result: {result}")
                     else:
                         logging.warning(f"No AI results returned or mapped for comment batch {i+1}.")
-                
-                logging.info(f"Successfully processed {processed_comment_count} comments with AI.")
+                except Exception as batch_e:
+                    logging.error(f"Error processing comment batch {i+1}: {batch_e}")
+            
+            logging.info(f"Successfully processed {processed_comment_count} comments with AI.")
 
-        except Exception as e:
-            logging.error(f"An error occurred during AI processing or database update: {e}", exc_info=True)
-        finally:
+    except Exception as e:
+        logging.error(f"An error occurred during AI processing or database update: {e}", exc_info=True)
+    finally:
+        try:
             conn.close()
-    else:
-        logging.error("Could not connect to the database.")
+        except Exception as e:
+            logging.warning(f"Error closing database connection: {e}")
+
 
 def handle_view_command(group_id: int = None, filters: dict = None, limit: int = None):
     """Displays posts from the database, optionally filtered by group and other criteria.
@@ -238,6 +264,9 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
         filters: Dictionary of additional filters to apply
         limit: Maximum number of posts to display
     """
+    if filters is None:
+        filters = {}
+        
     while True:
         filterable_fields = {
             'ai_category': 'Category',
@@ -255,6 +284,9 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
         except ValueError:
             print("Invalid input. Please enter a number.")
             continue
+        except KeyboardInterrupt:
+            print("\nOperation cancelled.")
+            return
         
         if choice == 0:
             break
@@ -282,6 +314,9 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
                         except ValueError:
                             print("Invalid input. No value selected.")
                             value_choice = 0
+                        except KeyboardInterrupt:
+                            print("\nOperation cancelled.")
+                            return
                         
                         if 1 <= value_choice <= len(distinct_values):
                             selected_value = distinct_values[value_choice-1]
@@ -309,7 +344,6 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
     conn = get_db_connection()
     if conn:
         try:
-            filters = filters or {}
             if limit:
                 filters['limit'] = limit
                 
@@ -363,6 +397,7 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
     else:
         print("Could not connect to the database.")
 
+
 def handle_export_command(args):
     """Handles the export-data command."""
     from export import exporter
@@ -414,7 +449,6 @@ def handle_export_command(args):
     finally:
         conn.close()
 
-from database.stats_queries import get_all_statistics
 
 def handle_add_group_command(group_name: str, group_url: str):
     """Handles adding a new Facebook group to track."""
@@ -435,6 +469,7 @@ def handle_add_group_command(group_name: str, group_url: str):
         logging.error(f"Error adding group: {e}")
     finally:
         conn.close()
+
 
 def handle_list_groups_command():
     """Handles listing all tracked Facebook groups."""
@@ -462,6 +497,7 @@ def handle_list_groups_command():
     finally:
         conn.close()
 
+
 def handle_remove_group_command(group_id: int):
     """Handles removing a group and its posts from tracking."""
     logging.info(f"Removing group with ID: {group_id}")
@@ -485,6 +521,7 @@ def handle_remove_group_command(group_id: int):
         logging.error(f"Error removing group: {e}")
     finally:
         conn.close()
+
 
 def handle_stats_command():
     """Handles the stats command to display summary statistics."""
@@ -515,10 +552,10 @@ def handle_stats_command():
     finally:
         conn.close()
 
+
 def main():
     """Main entry point for the FB Scrape Ideas CLI application."""
     from cli.menu_handler import run_cli
-    from database.crud import get_db_connection
     
     try:
         init_db()
@@ -537,6 +574,7 @@ def main():
         missing_tables = required_tables - tables
         if missing_tables:
             logging.error(f"Missing required tables: {missing_tables}")
+            conn.close()
             return
             
         conn.close()
@@ -557,6 +595,7 @@ def main():
     }
     
     run_cli(command_handlers)
+
 
 if __name__ == '__main__':
     main()

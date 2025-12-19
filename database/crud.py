@@ -19,6 +19,8 @@ def get_db_connection(db_name='insights.db'):
     try:
         conn = sqlite3.connect(db_name)
         conn.row_factory = sqlite3.Row
+        # Enable foreign key constraint enforcement
+        conn.execute('PRAGMA foreign_keys = ON')
         return conn
     except sqlite3.Error as e:
         logging.error(f"Database connection error: {e}")
