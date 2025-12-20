@@ -3,17 +3,33 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def init_db(db_name='insights.db'):
+
+def get_db_path(db_name: str = 'insights.db') -> str:
+    """
+    Get the database path using the centralized config function.
+    Falls back to local db_name if config is not available.
+    """
+    try:
+        from config import get_db_path as config_get_db_path
+        return config_get_db_path(db_name)
+    except ImportError:
+        # Fallback if config module not available
+        return db_name
+
+
+def init_db(db_name: str = 'insights.db'):
     """
     Initializes the SQLite database and creates required tables if they don't exist.
     Now supports multiple Facebook groups with Groups table.
 
     Args:
-        db_name: The name of the SQLite database file.
+        db_name: The name of the SQLite database file (used to build full path).
     """
+    db_path = get_db_path(db_name)
     conn = None
+    
     try:
-        conn = sqlite3.connect(db_name)
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         # Enable foreign key constraint enforcement
@@ -73,7 +89,7 @@ def init_db(db_name='insights.db'):
         ''')
 
         conn.commit()
-        logging.info(f"Database '{db_name}' initialized with Groups and Posts tables created or verified.")
+        logging.info(f"Database '{db_path}' initialized with Groups and Posts tables created or verified.")
 
     except sqlite3.Error as e:
         logging.error(f"Database error: {e}")
@@ -84,4 +100,4 @@ def init_db(db_name='insights.db'):
             conn.close()
 
 if __name__ == '__main__':
-    init_db() 
+    init_db()

@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import os
 import re
+import getpass
 from datetime import datetime
 
 ASCII_ART = r"""
@@ -97,6 +98,92 @@ def get_validated_input(prompt: str, validator, error_msg: str, allow_empty: boo
 
 # --- Core Functions ---
 
+def handle_settings_menu():
+    """Settings submenu for managing credentials and configuration."""
+    from config import (
+        save_credential_to_env, delete_env_file, 
+        get_env_file_path, get_db_path,
+        has_google_api_key, has_facebook_credentials
+    )
+    
+    while True:
+        print("\n" + "=" * 50)
+        print("  SETTINGS")
+        print("=" * 50)
+        
+        # Show current status
+        api_status = "Configured" if has_google_api_key() else "Not configured"
+        fb_status = "Configured" if has_facebook_credentials() else "Not configured"
+        print(f"\n  Google API Key: {api_status}")
+        print(f"  Facebook Credentials: {fb_status}")
+        
+        print("\n  1. Update Google API Key")
+        print("  2. Update Facebook Credentials")
+        print("  3. Show Config Locations")
+        print("  4. Clear All Saved Credentials")
+        print("  0. Back to Main Menu")
+        print("=" * 50)
+        
+        try:
+            choice = input("\nSelect option: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n")
+            break
+        
+        if choice == '1':
+            print("\nGet your API key from: https://aistudio.google.com/apikey")
+            try:
+                api_key = getpass.getpass("Enter new Google API Key: ").strip()
+                if api_key:
+                    if save_credential_to_env("GOOGLE_API_KEY", api_key):
+                        print("  API key updated!")
+                    else:
+                        print("  Failed to save API key.")
+                else:
+                    print("  No API key entered, skipping.")
+            except (EOFError, KeyboardInterrupt):
+                print("\n  Cancelled.")
+                
+        elif choice == '2':
+            try:
+                username = input("Enter Facebook Email/Username: ").strip()
+                password = getpass.getpass("Enter Facebook Password: ")
+                if username and password:
+                    saved_user = save_credential_to_env("FB_USER", username)
+                    saved_pass = save_credential_to_env("FB_PASS", password)
+                    if saved_user and saved_pass:
+                        print("  Credentials updated!")
+                    else:
+                        print("  Failed to save credentials.")
+                else:
+                    print("  Username and password are required.")
+            except (EOFError, KeyboardInterrupt):
+                print("\n  Cancelled.")
+                
+        elif choice == '3':
+            print(f"\n  Config file: {get_env_file_path()}")
+            print(f"  Database: {get_db_path()}")
+            input("\nPress Enter to continue...")
+            
+        elif choice == '4':
+            try:
+                confirm = input("  Delete all saved credentials? Type 'yes' to confirm: ").strip()
+                if confirm.lower() == 'yes':
+                    if delete_env_file():
+                        print("  Credentials deleted!")
+                    else:
+                        print("  Failed to delete credentials.")
+                else:
+                    print("  Cancelled.")
+            except (EOFError, KeyboardInterrupt):
+                print("\n  Cancelled.")
+                
+        elif choice == '0':
+            break
+        else:
+            print("  Invalid choice. Please enter 0-4.")
+
+
 def clear_screen():
     """Clears the terminal screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -154,6 +241,8 @@ def create_arg_parser():
 
     stats_parser = subparsers.add_parser('stats', help='Display summary statistics about the data in the database.')
 
+    setup_parser = subparsers.add_parser('setup', help='Run the setup wizard to configure credentials.')
+
     return parser
 
 def run_interactive_menu(command_handlers):
@@ -180,9 +269,12 @@ def run_interactive_menu(command_handlers):
         print("   - Export Data to CSV/JSON")
         print("   - Manage Facebook Groups (Add/List/Remove)")
         print("   - View Statistics & Trends")
-        print("\n5. Exit")
+        print("\n5. Settings:")
+        print("   - Manage API Keys & Credentials")
+        print("   - View Config Locations")
+        print("\n6. Exit")
         
-        choice = input("\nEnter your choice (1-5): ").strip()
+        choice = input("\nEnter your choice (1-6): ").strip()
         
         if choice == '1':
             try:
@@ -374,10 +466,13 @@ def run_interactive_menu(command_handlers):
             input("\nPress Enter to continue...")
             
         elif choice == '5':
+            handle_settings_menu()
+            
+        elif choice == '6':
             print("Exiting application. Goodbye!")
             break
         else:
-            print("Invalid choice. Please enter a number between 1-5.")
+            print("Invalid choice. Please enter a number between 1-6.")
             input("\nPress Enter to continue...")
 
 def handle_cli_arguments(args, command_handlers):
@@ -424,6 +519,9 @@ def handle_cli_arguments(args, command_handlers):
                 command_handlers['remove_group'](args.id)
             elif args.command == 'stats':
                 command_handlers['stats']()
+            elif args.command == 'setup':
+                from config import run_setup_wizard
+                run_setup_wizard()
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:

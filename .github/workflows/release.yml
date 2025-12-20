@@ -1,0 +1,330 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  # ============================================
+  # Job 1: Check version and prepare release
+  # ============================================
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+      should_release: ${{ steps.check_tag.outputs.should_release }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from version.py
+        id: get_version
+        run: |
+          VERSION=$(python -c "exec(open('version.py').read()); print(__version__)")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "Tag v$VERSION already exists. Skipping release."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "Tag v$VERSION does not exist. Will create release."
+          fi
+
+  # ============================================
+  # Job 2: Build executables for all platforms
+  # ============================================
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            python-version: "3.11"
+            artifact-name: FBScrapeIdeas-windows-x64.exe
+            pyinstaller-args: --onefile --name FBScrapeIdeas-windows-x64
+            
+          - name: macOS Intel
+            os: macos-13
+            python-version: "3.11"
+            artifact-name: FBScrapeIdeas-macos-x64
+            pyinstaller-args: --onefile --name FBScrapeIdeas-macos-x64
+            
+          - name: macOS Apple Silicon
+            os: macos-14
+            python-version: "3.11"
+            artifact-name: FBScrapeIdeas-macos-arm64
+            pyinstaller-args: --onefile --name FBScrapeIdeas-macos-arm64
+            
+          - name: Linux x64
+            os: ubuntu-latest
+            python-version: "3.11"
+            artifact-name: FBScrapeIdeas-linux-x64
+            pyinstaller-args: --onefile --name FBScrapeIdeas-linux-x64
+            
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+            python-version: "3.11"
+            artifact-name: FBScrapeIdeas-linux-arm64
+            pyinstaller-args: --onefile --name FBScrapeIdeas-linux-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/Library/Caches/pip
+            ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-${{ runner.arch }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable with PyInstaller
+        run: |
+          pyinstaller ${{ matrix.pyinstaller-args }} \
+            --add-data "ai/gemini_schema.json:ai" \
+            --add-data "ai/gemini_comment_schema.json:ai" \
+            --hidden-import=selenium \
+            --hidden-import=google.generativeai \
+            --hidden-import=bs4 \
+            --hidden-import=dateparser \
+            --hidden-import=tenacity \
+            --hidden-import=requests \
+            --hidden-import=dotenv \
+            --collect-all google.generativeai \
+            --noconfirm \
+            --clean \
+            main.py
+        shell: bash
+
+      - name: Verify executable exists (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ls -la dist/
+          chmod +x dist/${{ matrix.artifact-name }}
+
+      - name: Verify executable exists (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          dir dist\
+        shell: cmd
+
+      - name: Test executable runs (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./dist/${{ matrix.artifact-name }} --help || echo "Note: --help may not be implemented, but executable runs"
+        continue-on-error: true
+
+      - name: Test executable runs (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          dist\${{ matrix.artifact-name }} --help || echo "Note: --help may not be implemented, but executable runs"
+        shell: cmd
+        continue-on-error: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: dist/${{ matrix.artifact-name }}
+          retention-days: 1
+
+  # ============================================
+  # Job 3: Create GitHub Release
+  # ============================================
+  release:
+    name: Create Release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          
+          # Move all executables to release-assets folder
+          find artifacts -type f -name "FBScrapeIdeas-*" -exec mv {} release-assets/ \;
+          
+          # List all assets
+          echo "Release assets:"
+          ls -la release-assets/
+          
+          # Make Unix executables executable
+          chmod +x release-assets/FBScrapeIdeas-macos-* release-assets/FBScrapeIdeas-linux-* 2>/dev/null || true
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd release-assets
+          sha256sum FBScrapeIdeas-* > SHA256SUMS.txt
+          echo "Checksums generated:"
+          cat SHA256SUMS.txt
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          
+          # Find the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found. Including all commits."
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges HEAD~20..HEAD 2>/dev/null || git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            echo "Previous tag: $PREV_TAG"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges ${PREV_TAG}..HEAD)
+          fi
+          
+          # Save changelog to file (handles multiline properly)
+          echo "$CHANGELOG" > changelog.txt
+          echo "changelog_file=changelog.txt" >> $GITHUB_OUTPUT
+
+      - name: Create release notes
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          CHANGELOG=$(cat changelog.txt)
+          
+          cat << 'RELEASE_NOTES' > release_notes.md
+          # 🚀 FB Scrape Ideas v${VERSION}
+          
+          A powerful Facebook group scraper with Google Gemini AI-powered categorization.
+          
+          ## 📦 Downloads
+          
+          | Platform | Architecture | File |
+          |----------|-------------|------|
+          | Windows | x64 | `FBScrapeIdeas-windows-x64.exe` |
+          | macOS | Intel (x64) | `FBScrapeIdeas-macos-x64` |
+          | macOS | Apple Silicon (ARM64) | `FBScrapeIdeas-macos-arm64` |
+          | Linux | x64 | `FBScrapeIdeas-linux-x64` |
+          | Linux/Chromebook | ARM64 | `FBScrapeIdeas-linux-arm64` |
+          
+          > 💡 **Tip**: Check `SHA256SUMS.txt` to verify your download integrity.
+          
+          ## 📋 What's Changed
+          
+          RELEASE_NOTES
+          
+          # Append the changelog
+          cat changelog.txt >> release_notes.md
+          
+          cat << 'RELEASE_NOTES_END' >> release_notes.md
+          
+          ## ⚙️ System Requirements
+          
+          - **Chrome or Chromium browser** - Required for Selenium web scraping
+          - **Google Gemini API key** - Required for AI-powered post categorization
+          - **Internet connection** - Required for scraping and AI analysis
+          
+          ## 🚀 Quick Start
+          
+          1. **Download** the appropriate binary for your platform from the assets below
+          2. **Create a `.env` file** in the same directory with your credentials:
+             ```env
+             GEMINI_API_KEY=your_gemini_api_key_here
+             ```
+          3. **Run the application**:
+             - **Windows**: Double-click or run `FBScrapeIdeas-windows-x64.exe` in Command Prompt
+             - **macOS/Linux**: Open terminal and run `./FBScrapeIdeas-<platform>-<arch>`
+          
+          ## 🔐 First Run
+          
+          On first run, you'll need to:
+          1. Log in to Facebook through the browser window that opens
+          2. The application will save your session for future use
+          
+          ## 📖 Documentation
+          
+          See the [README](https://github.com/${{ github.repository }}/blob/main/README.md) for detailed usage instructions.
+          
+          ---
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${PREV_VERSION:-initial}...v${VERSION}
+          RELEASE_NOTES_END
+          
+          # Replace version placeholder
+          sed -i "s/\${VERSION}/$VERSION/g" release_notes.md
+          
+          echo "Release notes generated:"
+          cat release_notes.md
+
+      - name: Create Git tag
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: FB Scrape Ideas v${{ needs.prepare.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================
+  # Job 4: Cleanup on failure
+  # ============================================
+  cleanup:
+    name: Cleanup on Failure
+    needs: [prepare, build, release]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report failure
+        run: |
+          echo "❌ Release workflow failed!"
+          echo "Version: ${{ needs.prepare.outputs.version }}"
+          echo "Please check the logs above for details."

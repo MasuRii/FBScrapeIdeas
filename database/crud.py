@@ -12,12 +12,29 @@ ALLOWED_FILTER_FIELDS = {
     'ai_is_potential_idea'
 }
 
+
+def _get_db_path(db_name: str = 'insights.db') -> str:
+    """
+    Get the database path using the centralized config function.
+    Falls back to local db_name if config is not available.
+    """
+    try:
+        from config import get_db_path as config_get_db_path
+        return config_get_db_path(db_name)
+    except ImportError:
+        # Fallback if config module not available
+        return db_name
+
+
 def get_db_connection(db_name='insights.db'):
     """
     Creates and returns a connection to the SQLite database.
+    Uses the platform-appropriate data directory via config.
     """
+    db_path = _get_db_path(db_name)
+    
     try:
-        conn = sqlite3.connect(db_name)
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         # Enable foreign key constraint enforcement
         conn.execute('PRAGMA foreign_keys = ON')

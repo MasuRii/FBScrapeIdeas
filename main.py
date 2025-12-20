@@ -2,6 +2,7 @@ import argparse
 import sqlite3
 import logging
 import asyncio
+import sys
 from datetime import datetime, timezone
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -16,6 +17,7 @@ from database.crud import (
 )
 from database.db_setup import init_db
 from database.stats_queries import get_all_statistics
+from config import is_first_run, run_setup_wizard, get_env_file_path, get_db_path
 from typing import Optional
 
 # Configure logging
@@ -553,9 +555,47 @@ def handle_stats_command():
         conn.close()
 
 
+def check_first_run():
+    """Check if this is first run and offer setup wizard."""
+    if is_first_run():
+        print("\n" + "=" * 60)
+        print("  Welcome to FB Scrape Ideas!")
+        print("=" * 60)
+        print("\nIt looks like this is your first time running the app.")
+        print("Let's set up your credentials.\n")
+        
+        try:
+            setup = input("Run setup now? (y/n): ").lower().strip()
+            if setup == 'y':
+                run_setup_wizard()
+            else:
+                print("\nYou can run setup later with: python main.py setup")
+                print("Or credentials will be requested when needed.\n")
+        except (EOFError, KeyboardInterrupt):
+            print("\n\nSkipping setup. Credentials will be requested when needed.\n")
+
+
+def handle_setup_command():
+    """Handle the setup command to run the setup wizard."""
+    print("\n" + "=" * 60)
+    print("  FB Scrape Ideas - Setup")
+    print("=" * 60)
+    run_setup_wizard()
+
+
 def main():
     """Main entry point for the FB Scrape Ideas CLI application."""
     from cli.menu_handler import run_cli
+    
+    # Check for setup command first (before full CLI parsing)
+    if len(sys.argv) > 1 and sys.argv[1] == 'setup':
+        handle_setup_command()
+        return
+    
+    # Only show first-run wizard for interactive mode (no command-line args)
+    # This prevents blocking when running CLI commands
+    if len(sys.argv) == 1:
+        check_first_run()
     
     try:
         init_db()
