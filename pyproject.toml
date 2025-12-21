@@ -94,9 +94,18 @@ major_on_zero = true
 upload_to_release = false
 upload_to_repository = false
 commit_message = "{version} [skip ci]"
+# Allow releases on any commit type - all unmatched commits bump patch
+allow_zero_version = true
 
 [tool.semantic_release.commit_parser_options]
-major_tags = ["🚨"]
-minor_tags = ["✨"]
-patch_tags = ["🐛", "🔒", "🛠", "⚡️", "📚", "🏗", "♻️", "🚦", "🎨", "📦", "🔖"]
+major_tags = ["🚨", "💥"]
+minor_tags = ["✨", "🎉"]
+patch_tags = [
+    "🐛", "🔒", "🛠", "⚡️", "📚", "🏗", "♻️", "🚦", "🎨", "📦", "🔖",
+    "🚀", "🔧", "📝", "🔄", "💡", "🔥", "💄", "🩹", "🔨", "✏️",
+    "🌐", "💬", "🗃️", "🔊", "🔇", "👥", "🚸", "🏷️", "🌱", "🚩",
+    "🥅", "💫", "🗑️", "🛂", "🩺", "🧱", "🧑‍💻", "💸", "🧵", "🦺"
+]
+# Default to patch bump for any commit that doesn't match emoji patterns
+default_bump_level = "patch"
 

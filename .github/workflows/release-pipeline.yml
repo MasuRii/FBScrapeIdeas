@@ -31,11 +31,13 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           git_committer_name: "github-actions[bot]"
           git_committer_email: "github-actions[bot]@users.noreply.github.com"
+          force: "patch"
 
   build:
     name: Build ${{ matrix.name }}
     needs: bump
-    if: needs.bump.outputs.released == 'true'
+    # Always run build - force flag ensures version always increments
+    if: always() && needs.bump.result == 'success'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -150,7 +152,8 @@ jobs:
   release:
     name: Create Release
     needs: [bump, build]
-    if: needs.bump.outputs.released == 'true'
+    # Always run release - force flag ensures version always increments
+    if: always() && needs.bump.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
