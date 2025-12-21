@@ -10,6 +10,9 @@ webdriver-manager>=4.0.0,<5.0
 # Google Gemini AI
 google-generativeai>=0.8.0,<1.0
 
+# OpenAI-Compatible API (also works with Ollama, LM Studio, OpenRouter, etc.)
+openai>=1.0.0,<2.0
+
 # Environment & Configuration
 python-dotenv>=1.0.0,<2.0
 

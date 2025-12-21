@@ -1,202 +1,54 @@
-import re
-import google.generativeai as genai
-import json
-from typing import List, Dict
+"""
+Gemini AI Service - Backward Compatibility Wrapper.
+
+This module provides backward compatibility for existing code that imports
+from gemini_service. It now delegates to the new provider abstraction layer.
+
+For new code, prefer using:
+    from ai.provider_factory import get_ai_provider
+"""
+
 import logging
-import time
-from google.api_core import retry
-from google.api_core import exceptions as core_exceptions
+from typing import List, Dict
 
-from config import get_google_api_key
+# Re-export the utility function that's still used directly
+from ai.gemini_provider import GeminiProvider
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-import asyncio
-from google.api_core import retry_async
 
 async def categorize_posts_batch(
-    posts: List[Dict],
-    initial_delay: float = 1.0
+    posts: List[Dict], initial_delay: float = 1.0
 ) -> List[Dict]:
     """
-    Asynchronously sends a batch of posts to Gemini 2.0 Flash for categorization.
-    Uses google.api_core.retry_async for handling transient API errors with exponential backoff.
+    Asynchronously sends a batch of posts to AI for categorization.
+
+    This is a backward-compatible wrapper that uses the new provider system.
 
     Args:
         posts: A list of dictionaries, each containing 'internal_post_id' and 'post_content_raw'.
-        initial_delay: Initial delay for retry backoff (default 1.0 seconds).
+        initial_delay: Initial delay for retry backoff (default 1.0 seconds). Ignored in new implementation.
 
     Returns:
         A list of dictionaries with added AI categorization results.
     """
-    if not posts:
-        return []
-
-    api_key = get_google_api_key()
-    if not api_key:
-        logging.error("Google API key not found.")
-        return []
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('models/gemini-2.0-flash')
-    
-    async_retry = retry_async.AsyncRetry(
-        predicate=retry_async.if_exception_type(
-            (core_exceptions.ResourceExhausted, core_exceptions.ServiceUnavailable)
-        ),
-        initial=initial_delay,
-        maximum=60.0,
-        multiplier=2.0,
-        deadline=300,
-        jitter=True
-    )
+    from ai.provider_factory import get_ai_provider
 
     try:
-        with open('ai/gemini_schema.json', 'r') as f:
-            response_schema = json.load(f)
-    except FileNotFoundError:
-        logging.error("Error: ai/gemini_schema.json not found.")
-        return []
-    except json.JSONDecodeError:
-        logging.error("Error decoding ai/gemini_schema.json.")
-        return []
-
-    prompt_parts = [
-        "You are an expert post categorizer. Analyze the following Facebook posts. ",
-        "For each post, identify its primary category, a sub-category if applicable, ",
-        "3-5 relevant keywords, a 1-2 sentence summary, whether it suggests a potential project idea (true/false), ",
-        "and provide a brief reasoning for your categorization. ",
-        "Posts are provided with a temporary ID. Format your response as a JSON array of objects, ",
-        "adhering to the provided schema. ",
-        "Categories to use: Problem Statement, Project Idea, Question/Inquiry, General Discussion, Other.\n\n",
-        "Posts:\n"
-    ]
-
-    post_id_map = {post['internal_post_id']: post for post in posts}
-    for post in posts:
-        prompt_parts.append(f"[POST_ID_{post['internal_post_id']}: {post['post_content_raw']}]\n")
-
-    prompt_text = "".join(prompt_parts)
-
-    logging.debug(f"Generated prompt (first 500 chars): {prompt_text[:500]}...")
-    logging.debug(f"Prompt length: {len(prompt_text)}")
-
-    generation_config = {
-        "response_mime_type": "application/json",
-        "response_schema": response_schema
-    }
-
-    logging.debug(f"Generation config: {generation_config}")
-
-    try:
-        logging.info(f"Categorizing {len(posts)} posts with Gemini API (retries handled by google.api_core)...")
-        logging.debug("Making Gemini API call...")
-        
-        # google.api_core.retry handles transient API errors (ResourceExhausted, ServiceUnavailable)
-        response = await async_retry(model.generate_content_async)(prompt_text, generation_config=generation_config)
-
-        if not response or not response.candidates:
-            block_reason = response.prompt_feedback.block_reason if hasattr(response, 'prompt_feedback') and response.prompt_feedback else 'unknown'
-            logging.error(f"Gemini API call failed or returned no candidates. Block reason: {block_reason}. Raw response: {response.text if hasattr(response, 'text') else str(response)}")
-            return []
-
-        logging.info("Gemini API call successful, received candidates.")
-        logging.debug(f"Raw Gemini response text: {response.text}")
-
-        logging.debug("Attempting to parse Gemini response JSON...")
-        try:
-            categorized_results_list = json.loads(response.text)
-            logging.debug("Successfully parsed Gemini response JSON.")
-        except json.JSONDecodeError as e:
-            logging.error(f"JSONDecodeError during parsing Gemini response: {e}. Raw response text: {response.text}")
-            return []
-
-        if not isinstance(categorized_results_list, list):
-            logging.error(f"Gemini response was not a list: {response.text}")
-            return []
-
-        mapped_results = []
-
-        for ai_result in categorized_results_list:
-            logging.debug(f"Processing AI result: {ai_result}")
-            original_post = None
-            post_id_from_ai = ai_result.get('postId')
-            logging.debug(f"AI result postId: {post_id_from_ai}")
-
-            if post_id_from_ai and post_id_from_ai.startswith('POST_ID_'):
-                try:
-                    id_str_part = post_id_from_ai.replace('POST_ID_', '')
-                    match = re.match(r"(\d+)", id_str_part)
-                    if match:
-                        original_id = int(match.group(1))
-                        if original_id in post_id_map:
-                            original_post = post_id_map[original_id]
-                            logging.debug(f"Mapped AI result using postId: {post_id_from_ai} (parsed as {original_id}) to original post ID: {original_id}")
-                        else:
-                            logging.warning(f"Gemini returned unknown postId {post_id_from_ai}. Parsed ID {original_id} not in post_id_map. Attempting fallback match.")
-                    else:
-                        logging.warning(f"Gemini returned postId {post_id_from_ai} with no leading numeric part after 'POST_ID_'. Attempting fallback match.")
-                except (ValueError, IndexError) as e:
-                    logging.warning(f"Gemini returned invalid postId format or content: {post_id_from_ai}. Error: {e}. Attempting fallback match.")
-
-            if not original_post:
-                logging.debug("Attempting fallback mapping by content.")
-                ai_summary = ai_result.get('summary', '')
-                matching_post = None
-
-                for original in posts:
-                    if original.get('post_content_raw') and ai_summary and ai_summary in original['post_content_raw']:
-                        matching_post = original
-                        break
-
-                if matching_post:
-                    original_post = matching_post
-                    logging.warning(f"Mapped AI result using summary content match. Original Post ID: {original_post.get('internal_post_id')}")
-                else:
-                    logging.warning(f"Could not map AI result (postId: {post_id_from_ai}, summary: '{ai_summary[:50] if ai_summary else ''}...') to any original post.")
-
-            if original_post:
-                combined_data = original_post.copy()
-                combined_data.update({
-                    'ai_category': ai_result.get('category'),
-                    'ai_sub_category': ai_result.get('subCategory'),
-                    'ai_keywords': json.dumps(ai_result.get('keywords', [])),
-                    'ai_summary': ai_result.get('summary'),
-                    'ai_is_potential_idea': int(ai_result.get('isPotentialIdea', False)),
-                    'ai_reasoning': ai_result.get('reasoning'),
-                    'ai_raw_response': json.dumps(ai_result),
-                    'is_processed_by_ai': 1,
-                    'last_ai_processing_at': int(time.time())
-                })
-                mapped_results.append(combined_data)
-            else:
-                logging.warning(f"Skipping AI result that could not be mapped to an original post: {ai_result}")
-
-        logging.info(f"Successfully categorized and mapped {len(mapped_results)} posts.")
-        unmapped_count = len(categorized_results_list) - len(mapped_results)
-        if unmapped_count > 0:
-            logging.warning(f"Warning: {unmapped_count} AI results could not be mapped back to original posts.")
-        return mapped_results
-
-    except core_exceptions.ResourceExhausted as e:
-        logging.error(f"API rate limit exceeded after retries: {e}")
-        return []
-    except core_exceptions.ServiceUnavailable as e:
-        logging.error(f"Gemini service unavailable after retries: {e}")
-        return []
-    except core_exceptions.GoogleAPIError as e:
-        logging.error(f"Google API error during categorization: {e}")
-        return []
+        provider = get_ai_provider()
+        return await provider.analyze_posts_batch(posts)
     except Exception as e:
-        logging.error(f"Unexpected error during post categorization: {type(e).__name__}: {e}")
+        logging.error(f"Error in categorize_posts_batch: {e}")
         return []
 
-def process_comments_with_gemini(
-    comments: List[Dict]
-) -> List[Dict]:
+
+def process_comments_with_gemini(comments: List[Dict]) -> List[Dict]:
     """
-    Sends a batch of comments to Gemini 2.0 Flash for analysis and returns the results.
-    Uses google.api_core.retry for handling transient API errors.
+    Sends a batch of comments to AI for analysis and returns the results.
+
+    This is a backward-compatible wrapper that uses the new provider system.
 
     Args:
         comments: A list of dictionaries, each containing 'comment_id' and 'comment_text'.
@@ -204,131 +56,19 @@ def process_comments_with_gemini(
     Returns:
         A list of dictionaries with added AI analysis results, or an empty list if processing fails.
     """
-    if not comments:
-        return []
-
-    api_key = get_google_api_key()
-    if not api_key:
-        logging.error("Google API key not found.")
-        return []
-
-    genai.configure(api_key=api_key)
-    
-    retry_policy = retry.Retry(
-        predicate=retry.if_exception_type(
-            (core_exceptions.ResourceExhausted, core_exceptions.ServiceUnavailable)
-        ),
-        initial=1.0,
-        maximum=60.0,
-        multiplier=2.0,
-        deadline=300
-    )
-    model = genai.GenerativeModel('models/gemini-2.0-flash')
+    from ai.provider_factory import get_ai_provider
 
     try:
-        with open('ai/gemini_comment_schema.json', 'r') as f:
-            response_schema = json.load(f)
-    except FileNotFoundError:
-        logging.error("Error: ai/gemini_comment_schema.json not found.")
-        return []
-    except json.JSONDecodeError:
-        logging.error("Error decoding ai/gemini_comment_schema.json.")
-        return []
-
-    prompt_parts = [
-        "You are an expert comment analyzer. Analyze the following Facebook comments. ",
-        "For each comment, categorize it, determine sentiment, extract keywords, and provide a brief summary. ",
-        "Format your response as a JSON array of objects, adhering to the provided schema. ",
-        "Categories to use: 'question', 'suggestion', 'agreement', 'disagreement', 'positive_feedback', 'negative_feedback', 'neutral', 'off_topic'.\n\n",
-        "Comments:\n"
-    ]
-
-    comment_id_map = {comment['comment_id']: comment for comment in comments}
-    for comment in comments:
-        prompt_parts.append(f"[COMMENT_ID_{comment['comment_id']}: {comment['comment_text']}]\n")
-
-    prompt_text = "".join(prompt_parts)
-
-    logging.debug(f"Generated comment prompt (first 500 chars): {prompt_text[:500]}...")
-    logging.debug(f"Comment prompt length: {len(prompt_text)}")
-
-    generation_config = {
-        "response_mime_type": "application/json",
-        "response_schema": response_schema
-    }
-
-    logging.debug(f"Generation config for comments: {generation_config}")
-
-    try:
-        logging.info(f"Analyzing {len(comments)} comments with Gemini API (retries handled by google.api_core)...")
-        logging.debug("Making Gemini API call for comments...")
-        
-        # google.api_core.retry handles transient API errors (ResourceExhausted, ServiceUnavailable)
-        response = retry_policy(model.generate_content)(prompt_text, generation_config=generation_config)
-
-        if not response or not response.candidates:
-            block_reason = response.prompt_feedback.block_reason if hasattr(response, 'prompt_feedback') and response.prompt_feedback else 'unknown'
-            logging.error(f"Gemini API call for comments failed or returned no candidates. Block reason: {block_reason}.")
-            return []
-
-        logging.info("Gemini API call for comments successful, received candidates.")
-        logging.debug(f"Raw Gemini response for comments: {response.text}")
-
-        try:
-            analysis_results_list = json.loads(response.text)
-            logging.debug("Successfully parsed Gemini response JSON for comments.")
-        except json.JSONDecodeError as e:
-            logging.error(f"JSONDecodeError during parsing Gemini response for comments: {e}. Raw response text: {response.text}")
-            return []
-
-        if not isinstance(analysis_results_list, list):
-            logging.error(f"Gemini response for comments was not a list: {response.text}")
-            return []
-
-        mapped_results = []
-        for ai_result in analysis_results_list:
-            original_comment = None
-            comment_id_from_ai = ai_result.get('comment_id')
-            
-            if comment_id_from_ai and comment_id_from_ai.startswith('COMMENT_ID_'):
-                try:
-                    original_id = int(comment_id_from_ai.replace('COMMENT_ID_', ''))
-                    if original_id in comment_id_map:
-                        original_comment = comment_id_map[original_id]
-                    else:
-                        logging.warning(f"Gemini returned unknown commentId {comment_id_from_ai}.")
-                except (ValueError, IndexError) as e:
-                    logging.warning(f"Gemini returned invalid commentId format: {comment_id_from_ai}. Error: {e}")
-
-            if original_comment:
-                combined_data = original_comment.copy()
-                combined_data.update({
-                    'ai_comment_category': ai_result.get('category'),
-                    'ai_comment_sentiment': ai_result.get('sentiment'),
-                    'ai_comment_keywords': json.dumps(ai_result.get('keywords', [])),
-                    'ai_comment_raw_response': json.dumps(ai_result)
-                })
-                mapped_results.append(combined_data)
-            else:
-                logging.warning(f"Skipping AI result that could not be mapped to a comment: {ai_result}")
-
-        logging.info(f"Successfully analyzed and mapped {len(mapped_results)} comments.")
-        return mapped_results
-
-    except core_exceptions.ResourceExhausted as e:
-        logging.error(f"API rate limit exceeded after retries: {e}")
-        return []
-    except core_exceptions.ServiceUnavailable as e:
-        logging.error(f"Gemini service unavailable after retries: {e}")
-        return []
-    except core_exceptions.GoogleAPIError as e:
-        logging.error(f"Google API error during comment analysis: {e}")
-        return []
+        provider = get_ai_provider()
+        return provider.analyze_comments_batch(comments)
     except Exception as e:
-        logging.error(f"Unexpected error during comment analysis: {type(e).__name__}: {e}")
+        logging.error(f"Error in process_comments_with_gemini: {e}")
         return []
 
-def create_post_batches(all_posts: List[Dict], max_tokens: int = 800000) -> List[List[Dict]]:
+
+def create_post_batches(
+    all_posts: List[Dict], max_tokens: int = 800000
+) -> List[List[Dict]]:
     """
     Groups posts into batches based on token count (Gemini 2.0 Flash has 1M token limit).
     Uses 4:1 character-to-token ratio as a safe estimate.
@@ -345,36 +85,58 @@ def create_post_batches(all_posts: List[Dict], max_tokens: int = 800000) -> List
     current_tokens = 0
 
     for post in all_posts:
-        content = post.get('post_content_raw', '')
+        content = post.get("post_content_raw", "")
         post_tokens = len(content) // 4 + 100
-        
+
         if current_tokens + post_tokens > max_tokens:
             if current_batch:
                 batches.append(current_batch)
                 current_batch = []
                 current_tokens = 0
             else:
-                logging.warning(f"Single post exceeds max tokens ({post_tokens} > {max_tokens})")
-        
+                logging.warning(
+                    f"Single post exceeds max tokens ({post_tokens} > {max_tokens})"
+                )
+
         current_batch.append(post)
         current_tokens += post_tokens
 
     if current_batch:
         batches.append(current_batch)
 
-    logging.info(f"Created {len(batches)} batches averaging {current_tokens//len(batches) if batches else 0} tokens/batch")
+    if batches:
+        avg_tokens = current_tokens // len(batches) if len(batches) > 0 else 0
+        logging.info(
+            f"Created {len(batches)} batches averaging {avg_tokens} tokens/batch"
+        )
+
     return batches
 
-if __name__ == '__main__':
+
+# For backward compatibility with any code importing the module to get models
+def list_available_gemini_models() -> List[str]:
+    """List available Gemini models. Requires GOOGLE_API_KEY to be set."""
+    from config import get_google_api_key
+    from ai.gemini_provider import list_gemini_models
+
+    try:
+        api_key = get_google_api_key()
+        return list_gemini_models(api_key)
+    except Exception as e:
+        logging.error(f"Error listing Gemini models: {e}")
+        return []
 
 
-
+if __name__ == "__main__":
+    # Test the batching function
     dummy_posts = []
     for i in range(20):
-        dummy_posts.append({
-            "internal_post_id": i + 1,
-            "post_content_raw": "This is a test post content. " * 50
-        })
-    
+        dummy_posts.append(
+            {
+                "internal_post_id": i + 1,
+                "post_content_raw": "This is a test post content. " * 50,
+            }
+        )
+
     batches = create_post_batches(dummy_posts, max_tokens=10000)
-    pass 
+    print(f"Created {len(batches)} batches")

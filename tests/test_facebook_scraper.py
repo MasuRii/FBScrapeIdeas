@@ -12,10 +12,17 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Read test group links from file
+# Read test group links from file (with fallback for missing file)
 TEST_GROUP_LINKS = []
-with open(os.path.join('memory-bank', 'FacebookGroupLinks.txt'), 'r') as f:
-    TEST_GROUP_LINKS = [line.strip() for line in f if line.strip()]
+_group_links_path = os.path.join("memory-bank", "FacebookGroupLinks.txt")
+if os.path.exists(_group_links_path):
+    with open(_group_links_path, "r") as f:
+        TEST_GROUP_LINKS = [line.strip() for line in f if line.strip()]
+
+# Fallback test URLs if file doesn't exist
+if not TEST_GROUP_LINKS:
+    TEST_GROUP_LINKS = ["https://www.facebook.com/groups/testgroup"]
+
 
 class TestFacebookScraper(unittest.TestCase):
     def setUp(self):
@@ -30,7 +37,9 @@ class TestFacebookScraper(unittest.TestCase):
         for i in range(20):  # Enough posts to test limiting
             mock_post = MagicMock(spec=WebElement)
             mock_post.get_attribute.return_value = f"<div>Test Post {i}</div>"
-            mock_post.find_elements.return_value = [MagicMock(get_attribute=lambda _: f"https://facebook.com/post{i}")]
+            mock_post.find_elements.return_value = [
+                MagicMock(get_attribute=lambda _: f"https://facebook.com/post{i}")
+            ]
             self.mock_posts.append(mock_post)
 
     def test_scraper_headless(self):
@@ -38,24 +47,24 @@ class TestFacebookScraper(unittest.TestCase):
         # Configure mock driver behavior
         self.mock_driver.find_elements.side_effect = [
             self.mock_posts[:5],  # First scroll
-            self.mock_posts[:10], # Second scroll
-            self.mock_posts[:15], # Third scroll
-            self.mock_posts[:20]  # Final scroll
+            self.mock_posts[:10],  # Second scroll
+            self.mock_posts[:15],  # Third scroll
+            self.mock_posts[:20],  # Final scroll
         ]
 
         # Call scraper with limit of 10 posts
-        results = list(scrape_authenticated_group(
-            self.mock_driver,
-            TEST_GROUP_LINKS[0],
-            num_posts=10
-        ))
+        results = list(
+            scrape_authenticated_group(
+                self.mock_driver, TEST_GROUP_LINKS[0], num_posts=10
+            )
+        )
 
         # Verify we got exactly 10 posts
         self.assertEqual(len(results), 10)
         for result in results:
-            self.assertIn('facebook_post_id', result)
-            self.assertIn('post_url', result)
-            self.assertIn('content_text', result)
+            self.assertIn("facebook_post_id", result)
+            self.assertIn("post_url", result)
+            self.assertIn("content_text", result)
 
     def test_scraper_with_all_group_links(self):
         """Test scraper with all available test group links"""
@@ -63,30 +72,28 @@ class TestFacebookScraper(unittest.TestCase):
             with self.subTest(group_url=group_url):
                 self.mock_driver.find_elements.side_effect = [
                     self.mock_posts[:5],
-                    self.mock_posts[:10]
+                    self.mock_posts[:10],
                 ]
 
-                results = list(scrape_authenticated_group(
-                    self.mock_driver,
-                    group_url,
-                    num_posts=5
-                ))
+                results = list(
+                    scrape_authenticated_group(self.mock_driver, group_url, num_posts=5)
+                )
 
                 self.assertEqual(len(results), 5)
-                self.assertTrue(all('facebook_post_id' in r for r in results))
+                self.assertTrue(all("facebook_post_id" in r for r in results))
 
     def test_scraper_with_insufficient_posts(self):
         """Test when fewer posts available than requested"""
         self.mock_driver.find_elements.side_effect = [
             self.mock_posts[:3],  # Only 3 posts available
-            self.mock_posts[:3]
+            self.mock_posts[:3],
         ]
 
-        results = list(scrape_authenticated_group(
-            self.mock_driver,
-            TEST_GROUP_LINKS[0],
-            num_posts=10
-        ))
+        results = list(
+            scrape_authenticated_group(
+                self.mock_driver, TEST_GROUP_LINKS[0], num_posts=10
+            )
+        )
 
         # Should return only available posts
         self.assertEqual(len(results), 3)
@@ -95,14 +102,15 @@ class TestFacebookScraper(unittest.TestCase):
         """Test error handling during scraping"""
         self.mock_driver.find_elements.side_effect = Exception("Test error")
 
-        with self.assertLogs(logger, level='ERROR') as cm:
-            results = list(scrape_authenticated_group(
-                self.mock_driver,
-                TEST_GROUP_LINKS[0],
-                num_posts=10
-            ))
-            self.assertTrue(any('Test error' in log for log in cm.output))
+        with self.assertLogs(logger, level="ERROR") as cm:
+            results = list(
+                scrape_authenticated_group(
+                    self.mock_driver, TEST_GROUP_LINKS[0], num_posts=10
+                )
+            )
+            self.assertTrue(any("Test error" in log for log in cm.output))
             self.assertEqual(len(results), 0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
