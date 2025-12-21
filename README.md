@@ -34,7 +34,10 @@ This tool helps users identify potential capstone/thesis ideas, student problems
 ## ✨ Features
 
 *   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts and comments from private or public groups.
-*   **🤖 AI-Powered Post & Comment Analysis:** Leverages Google's Gemini Flash model for intelligent categorization of posts and sentiment analysis of comments.
+*   **🤖 Flexible AI Analysis:** 
+    *   Support for **Google Gemini** (default) and **OpenAI-compatible** providers (OpenAI, Ollama, LM Studio, etc.)
+    *   Configurable models (e.g., switch between Gemini 2.5 Pro, 2.0 Flash, or local LLMs)
+    *   **Customizable Prompts:** Override default AI prompts via JSON configuration
 *   **💾 Local Database Storage:** Stores scraped data and AI insights in a local SQLite database.
 *   **📊 Data Export & Statistics:** Export data to CSV/JSON formats and view detailed statistics.
 *   **💻 Advanced CLI Interface:**
@@ -133,14 +136,101 @@ Before you begin, ensure you have the following:
     Create a `.env` file in the project root:
     ```dotenv
     # .env
+    
+    # Provider Selection (gemini or openai)
+    AI_PROVIDER=gemini
+    
+    # Gemini Configuration
     GOOGLE_API_KEY=YOUR_GEMINI_API_KEY_HERE
+    GEMINI_MODEL=models/gemini-2.5-flash
+    
+    # OpenAI-Compatible Configuration (Optional)
+    # OPENAI_API_KEY=sk-...
+    # OPENAI_BASE_URL=https://api.openai.com/v1
+    # OPENAI_MODEL=gpt-5o
     ```
-    (Use `.env.example` as a template)
+    (See [AI Provider Configuration](#ai-provider-configuration) for more details)
     > Note: Facebook credentials are entered securely during scraping
 
 2.  **WebDriver Setup:**
     `webdriver-manager` will handle this automatically on the first run.
 
+
+## 🧠 AI Provider Configuration
+
+FB Scrape Ideas supports multiple AI providers, allowing you to choose between Google's Gemini models, OpenAI's official API, or local LLMs running via tools like Ollama or LM Studio.
+
+You can configure these settings via the `.env` file or the CLI menu.
+
+### 🔹 Using Google Gemini (Default)
+
+This is the default provider. You only need a Google API Key.
+
+**Configuration (`.env`):**
+```dotenv
+AI_PROVIDER=gemini
+GOOGLE_API_KEY=your_google_api_key
+GEMINI_MODEL=models/gemini-2.0-flash  # Optional: Change model
+```
+
+**Available Gemini Models:**
+- `models/gemini-2.0-flash` (Fast, efficient)
+- `models/gemini-1.5-flash`
+- `models/gemini-1.5-pro` (Higher reasoning capability)
+
+### 🔹 Using OpenAI-Compatible Providers
+
+You can connect to any service that follows the OpenAI API standard, including local LLMs.
+
+#### 1. Official OpenAI
+```dotenv
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5o
+```
+
+#### 2. Ollama (Local LLM)
+Run Ollama locally (`ollama serve`) and use the following config:
+```dotenv
+AI_PROVIDER=openai
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_API_KEY=ollama  # Value doesn't matter for Ollama, but must be present
+OPENAI_MODEL=llama3    # Or any model you have pulled
+```
+
+#### 3. LM Studio (Local LLM)
+Start the local server in LM Studio and use:
+```dotenv
+AI_PROVIDER=openai
+OPENAI_BASE_URL=http://localhost:1234/v1
+OPENAI_API_KEY=lm-studio
+OPENAI_MODEL=model-identifier
+```
+
+#### 4. OpenRouter / Together AI / Groq
+Point the `OPENAI_BASE_URL` to the provider's endpoint:
+```dotenv
+AI_PROVIDER=openai
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_API_KEY=your_openrouter_key
+OPENAI_MODEL=anthropic/claude-3-opus
+```
+
+### 🔹 Custom Prompts
+
+You can customize the instructions given to the AI by creating a `custom_prompts.json` file in the root directory. This allows you to tailor the categorization logic or sentiment analysis to your specific needs.
+
+**To use:**
+1. Copy `custom_prompts.example.json` to `custom_prompts.json`.
+2. Edit the prompts in `custom_prompts.json`.
+
+**Example Structure:**
+```json
+{
+  "post_categorization": "You are an expert post categorizer. Analyze the following...",
+  "comment_analysis": "You are an expert comment analyzer..."
+}
+```
 
 ## ⚙️ Usage
 
@@ -158,7 +248,7 @@ python main.py <command> [options]
     ```
     > You'll be prompted securely for Facebook credentials
     
-*   `process-ai`: Processes scraped posts and comments with Gemini AI.
+*   `process-ai`: Processes scraped posts and comments with the configured AI provider.
     ```bash
     python main.py process-ai
     ```

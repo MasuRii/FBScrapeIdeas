@@ -1,9 +1,10 @@
 import uuid
 import requests
+import random
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any, Iterator
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -21,7 +22,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger().setLevel(logging.INFO)
 
-POST_CONTAINER_S = (By.CSS_SELECTOR, 'div.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z, div[role="article"]')
+POST_CONTAINER_S = (By.CSS_SELECTOR, 'div.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z, div[role="article"], div[data-ad-preview="message"], div[data-pagelet^="FeedUnit_"]')
 POST_PERMALINK_XPATH_S = (By.XPATH, ".//a[contains(@href, '/posts/')] | .//a[contains(@href, '/videos/')] | .//a[contains(@href, '/photos/')] | .//abbr/ancestor::a")
 POST_TIMESTAMP_FALLBACK_XPATH_S = (By.XPATH, ".//abbr | .//a/span[@data-lexical-text='true']")
 FEED_OR_SCROLLER_S = (By.CSS_SELECTOR, "div[role='feed'], div[data-testid='post_scroller']")
@@ -169,13 +170,13 @@ def login_to_facebook(driver: WebDriver, username: str, password: str) -> bool:
             login_successful = False
 
     except (NoSuchElementException, TimeoutException) as e:
-        logging.error(f"Selenium element error during login: {e}")
+        logging.error(f"Selenium element error during login (username={username[:3]}***): {type(e).__name__}: {e}")
         login_successful = False
     except WebDriverException as e:
-        logging.error(f"WebDriver error during login: {e}")
+        logging.error(f"WebDriver error during login (username={username[:3]}***): {type(e).__name__}: {e}")
         login_successful = False
     except Exception as e:
-        logging.error(f"An unexpected error occurred during login: {e}")
+        logging.error(f"An unexpected error occurred during login (username={username[:3]}***): {type(e).__name__}: {e}")
         login_successful = False
 
     if login_successful:
@@ -277,7 +278,7 @@ def _extract_data_from_post_html(
         "post_url": post_url_from_main,
         "content_text": "N/A",
         "posted_at": None,
-        "scraped_at": datetime.now().isoformat(),
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
         "post_author_name": None,
         "post_author_profile_pic_url": None,
         "post_image_url": None,
@@ -506,10 +507,17 @@ def scrape_authenticated_group(
         driver.get(group_url)
         logging.debug(f"Successfully navigated to {group_url}")
 
+        # Wait for feed element and at least one post
         WebDriverWait(driver, 30).until(
              EC.presence_of_element_located(FEED_OR_SCROLLER_S)
         )
         logging.debug("Feed element found.")
+        
+        # Wait for at least one post to appear
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located(POST_CONTAINER_S)
+        )
+        logging.debug("At least one post detected.")
 
         if "groups/" not in driver.current_url or "not_found" in driver.current_url or "login" in driver.current_url:
              logging.warning(f"Potential issue accessing group URL {group_url}. Current URL: {driver.current_url}. May require manual navigation or login handling.")
@@ -537,21 +545,35 @@ def scrape_authenticated_group(
             while extracted_count < num_posts and scroll_attempt < max_scroll_attempts:
                 scroll_attempt += 1
                 
-                driver.execute_script("window.scrollBy(0, window.innerHeight * 0.8);")
-                time.sleep(1.5)
+                # Scroll to bottom to ensure all posts load
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                
+                # Rate limiting with random jitter to avoid detection
+                scroll_delay = random.uniform(1.5, 3.5)
+                logging.debug(f"Scroll {scroll_attempt}: Waiting {scroll_delay:.2f}s before next action")
+                time.sleep(scroll_delay)
 
                 try:
-                    WebDriverWait(driver, 7).until(
-                        lambda d: len(d.find_elements(POST_CONTAINER_S[0], POST_CONTAINER_S[1])) > last_on_page_post_count or \
-                                  (scroll_attempt > 1 and len(d.find_elements(POST_CONTAINER_S[0], POST_CONTAINER_S[1])) == last_on_page_post_count)
+                    # Wait for either new posts or timeout
+                    WebDriverWait(driver, 10).until(
+                        lambda d: len(d.find_elements(POST_CONTAINER_S[0], POST_CONTAINER_S[1])) > last_on_page_post_count
                     )
+                    consecutive_no_new_posts = 0
                 except TimeoutException:
-                    logging.debug(f"Scroll attempt {scroll_attempt}: No new posts appeared after scroll or timeout.")
+                    consecutive_no_new_posts += 1
+                    logging.debug(f"Scroll attempt {scroll_attempt}: No new posts detected. Consecutive misses: {consecutive_no_new_posts}")
+                except Exception as e:
+                    logging.warning(f"Unexpected error during scroll wait on attempt {scroll_attempt} for group {group_url}: {e}")
+                    raise  # Re-raise to maintain original behavior
                 
+                # Modified overlay handling with more robust selectors and checks
                 overlay_container_selectors = [
-                    "//div[@data-testid='dialog']", "//div[contains(@role, 'dialog')]",
-                    "//div[contains(@aria-label, 'Save your login info')]", "//div[contains(@aria-label, 'Turn on notifications')]",
-                    "//div[@aria-label='View site information']"
+                    "//div[@data-testid='dialog']",
+                    "//div[contains(@role, 'dialog') and contains(@aria-hidden, 'false')]",
+                    "//div[contains(@aria-label, 'Save your login info') and @role='dialog']",
+                    "//div[contains(@aria-label, 'Turn on notifications') and @role='dialog']",
+                    "//div[@aria-label='View site information' and @role='dialog']",
+                    "//div[@role='presentation' and contains(@class, 'overlay')]"
                 ]
                 for overlay_selector_xpath in overlay_container_selectors:
                     try:
@@ -610,17 +632,22 @@ def scrape_authenticated_group(
 
 
                 current_post_elements = driver.find_elements(POST_CONTAINER_S[0], POST_CONTAINER_S[1])
+                new_posts_count = len(current_post_elements) - last_on_page_post_count
                 
-                if len(current_post_elements) > last_on_page_post_count:
+                if new_posts_count > 0:
                     consecutive_no_new_posts = 0
+                    logging.info(f"Found {new_posts_count} new posts on scroll {scroll_attempt}")
                 else:
                     consecutive_no_new_posts += 1
-                    if consecutive_no_new_posts >= MAX_CONSECUTIVE_NO_POSTS:
-                        logging.info(f"No new posts found for {consecutive_no_new_posts} consecutive scrolls. Stopping scroll.")
-                        break
+                    logging.debug(f"No new posts on scroll {scroll_attempt}. Consecutive misses: {consecutive_no_new_posts}")
                 
                 last_on_page_post_count = len(current_post_elements)
-                logging.info(f"Scroll {scroll_attempt}: Found {last_on_page_post_count} potential posts. Scraped: {extracted_count}/{num_posts}. Active tasks: {len(active_futures)}.")
+                logging.info(f"Scroll {scroll_attempt}: Total posts: {last_on_page_post_count}, Scraped: {extracted_count}/{num_posts}. Active tasks: {len(active_futures)}.")
+                
+                # Only stop if we've tried enough times and have some posts
+                if consecutive_no_new_posts >= MAX_CONSECUTIVE_NO_POSTS and extracted_count > 0:
+                    logging.info(f"No new posts for {consecutive_no_new_posts} scrolls but have {extracted_count} posts. Stopping.")
+                    break
 
                 for post_element in current_post_elements:
                     if extracted_count >= num_posts: break
@@ -701,14 +728,14 @@ def scrape_authenticated_group(
         if extracted_count < num_posts:
              logging.warning(f"Generator finished, but only yielded {extracted_count} posts, less than requested {num_posts}.")
 
-    except TimeoutException:
-        logging.error(f"Main thread timed out waiting for elements while scraping group {group_url}.")
-    except NoSuchElementException:
-         logging.error(f"Main thread could not find expected elements while scraping group {group_url}. Selectors may be outdated.")
+    except TimeoutException as e:
+        logging.error(f"Main thread timed out waiting for elements while scraping group {group_url}: {e}")
+    except NoSuchElementException as e:
+         logging.error(f"Main thread could not find expected elements while scraping group {group_url}. Selectors may be outdated: {e}")
     except WebDriverException as e:
-        logging.error(f"A WebDriver error occurred during group scraping: {e}")
+        logging.error(f"A WebDriver error occurred during group scraping for {group_url}: {e}")
     except Exception as e:
-        logging.error(f"An unexpected error occurred during group scraping: {e}", exc_info=True)
+        logging.error(f"An unexpected error occurred during group scraping for {group_url}: {type(e).__name__}: {e}", exc_info=True)
 
 
 @retry(
@@ -732,12 +759,12 @@ def is_facebook_session_valid(driver: WebDriver) -> bool:
         )
         logging.debug("Session appears valid.")
         return True
-    except TimeoutException:
-        logging.warning("Session check timed out or redirected to login. Session may be invalid.")
+    except TimeoutException as e:
+        logging.warning(f"Session check timed out or redirected to login. Session may be invalid: {e}")
         return False
     except WebDriverException as e:
-        logging.error(f"WebDriver error during session check: {e}")
+        logging.error(f"WebDriver error during session check: {type(e).__name__}: {e}")
         return False
     except Exception as e:
-        logging.error(f"An unexpected error occurred during session check: {e}")
+        logging.error(f"An unexpected error occurred during session check: {type(e).__name__}: {e}")
         return False
