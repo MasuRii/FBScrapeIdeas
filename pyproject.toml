@@ -107,5 +107,5 @@ patch_tags = [
     "🥅", "💫", "🗑️", "🛂", "🩺", "🧱", "🧑‍💻", "💸", "🧵", "🦺"
 ]
 # Default to patch bump for any commit that doesn't match emoji patterns
-default_bump_level = "patch"
+default_bump_level = 1
 
