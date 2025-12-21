@@ -1,7 +1,21 @@
 # CHANGELOG
 
 
-## v0.7.0 (2025-12-21)
+## v0.8.1 (2025-12-21)
+
+### 🐛
+
+- 🐛 [infra] Fix retired macOS runner image in release workflow
+  ([`31d6f0a`](https://github.com/MasuRii/FBScrapeIdeas/commit/31d6f0a220e684bc42916176bec047b3e3a053de))
+
+📝 Summary: Updated the retired `macos-13` runner image to `macos-latest` in the release matrix to
+  fix build failures.
+
+🔧 Changes: - Updated `macos-13` to `macos-latest` in `.github/workflows/release.yml`. - Standardized
+  macOS runners in the build matrix.
+
+
+## v0.8.0 (2025-12-21)
 
 ### Other
 
@@ -74,6 +88,11 @@
   custom_prompts.example.json - Template for custom AI prompts
 
 🔗 Related: Enables local LLM usage and provider flexibility
+
+### 🔖
+
+- 🔖 Version 0.8.0
+  ([`f06e3b3`](https://github.com/MasuRii/FBScrapeIdeas/commit/f06e3b3ce5ffdd4337efe9054c68a9e1d2c6abe7))
 
 
 ## v0.6.0 (2025-05-30)
