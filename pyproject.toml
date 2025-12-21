@@ -7,7 +7,7 @@
 
 [project]
 name = "fbscrapeideas"
-version = "0.8.2"
+version = "0.8.3"
 description = "CLI app for scraping Facebook groups with AI-powered categorization"
 requires-python = ">=3.11"
 
