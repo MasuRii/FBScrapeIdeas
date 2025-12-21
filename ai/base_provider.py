@@ -6,8 +6,8 @@ enabling seamless switching between different AI backends (Gemini, OpenAI, etc.)
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -16,12 +16,12 @@ class PostCategorizationResult:
 
     post_id: str
     category: str
-    sub_category: Optional[str]
-    keywords: List[str]
+    sub_category: str | None
+    keywords: list[str]
     summary: str
     is_potential_idea: bool
     reasoning: str
-    raw_response: Dict[str, Any]
+    raw_response: dict[str, Any]
 
 
 @dataclass
@@ -31,8 +31,8 @@ class CommentAnalysisResult:
     comment_id: str
     category: str
     sentiment: str
-    keywords: List[str]
-    raw_response: Dict[str, Any]
+    keywords: list[str]
+    raw_response: dict[str, Any]
 
 
 class AIProvider(ABC):
@@ -43,7 +43,7 @@ class AIProvider(ABC):
     to ensure consistent behavior across different backends.
     """
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(self, model: str | None = None):
         """
         Initialize the AI provider.
 
@@ -54,8 +54,8 @@ class AIProvider(ABC):
 
     @abstractmethod
     async def analyze_posts_batch(
-        self, posts: List[Dict], custom_prompt: Optional[str] = None
-    ) -> List[Dict]:
+        self, posts: list[dict], custom_prompt: str | None = None
+    ) -> list[dict]:
         """
         Analyze a batch of posts and return categorization results.
 
@@ -70,8 +70,8 @@ class AIProvider(ABC):
 
     @abstractmethod
     def analyze_comments_batch(
-        self, comments: List[Dict], custom_prompt: Optional[str] = None
-    ) -> List[Dict]:
+        self, comments: list[dict], custom_prompt: str | None = None
+    ) -> list[dict]:
         """
         Analyze a batch of comments and return analysis results.
 
@@ -85,7 +85,7 @@ class AIProvider(ABC):
         pass
 
     @abstractmethod
-    def list_available_models(self) -> List[str]:
+    def list_available_models(self) -> list[str]:
         """
         List all available models for this provider.
 

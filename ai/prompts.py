@@ -7,14 +7,11 @@ from a custom_prompts.json file.
 """
 
 import json
-import os
 import logging
-from typing import Dict, Optional
+import os
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 # Default prompts - used when no custom prompts are provided
@@ -84,7 +81,7 @@ def get_custom_prompts_path() -> Path:
     return cwd_path  # Return default path even if it doesn't exist
 
 
-def load_custom_prompts() -> Dict[str, str]:
+def load_custom_prompts() -> dict[str, str]:
     """
     Load custom prompts from custom_prompts.json if it exists.
 
@@ -98,7 +95,7 @@ def load_custom_prompts() -> Dict[str, str]:
         return {}
 
     try:
-        with open(custom_path, "r", encoding="utf-8") as f:
+        with open(custom_path, encoding="utf-8") as f:
             custom_prompts = json.load(f)
             logging.info(f"Loaded custom prompts from {custom_path}")
             return custom_prompts
@@ -126,8 +123,7 @@ def get_prompt(prompt_type: str, include_schema: bool = False) -> str:
     """
     if prompt_type not in DEFAULT_PROMPTS:
         raise ValueError(
-            f"Unknown prompt type: {prompt_type}. "
-            f"Available types: {list(DEFAULT_PROMPTS.keys())}"
+            f"Unknown prompt type: {prompt_type}. Available types: {list(DEFAULT_PROMPTS.keys())}"
         )
 
     # Try to load custom prompt first
@@ -154,7 +150,7 @@ def get_comment_analysis_prompt(include_schema: bool = False) -> str:
     return get_prompt("comment_analysis", include_schema=include_schema)
 
 
-def get_all_prompts() -> Dict[str, str]:
+def get_all_prompts() -> dict[str, str]:
     """
     Get all prompts (custom with fallback to defaults).
 
@@ -167,7 +163,7 @@ def get_all_prompts() -> Dict[str, str]:
     return all_prompts
 
 
-def save_custom_prompts(prompts: Dict[str, str], path: Optional[Path] = None) -> bool:
+def save_custom_prompts(prompts: dict[str, str], path: Path | None = None) -> bool:
     """
     Save custom prompts to file.
 

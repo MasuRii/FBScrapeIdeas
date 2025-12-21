@@ -5,30 +5,26 @@ This module implements the AIProvider interface for Google's Gemini API,
 supporting configurable model selection and structured JSON output.
 """
 
-import re
 import json
 import logging
+import re
 import time
-from typing import List, Dict, Optional
 
 import google.generativeai as genai
-from google.api_core import retry
-from google.api_core import retry_async
 from google.api_core import exceptions as core_exceptions
+from google.api_core import retry, retry_async
 
 from ai.base_provider import AIProvider
-from ai.prompts import get_post_categorization_prompt, get_comment_analysis_prompt
+from ai.prompts import get_comment_analysis_prompt, get_post_categorization_prompt
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 # Default Gemini model
 DEFAULT_GEMINI_MODEL = "models/gemini-2.0-flash"
 
 
-def list_gemini_models(api_key: str) -> List[str]:
+def list_gemini_models(api_key: str) -> list[str]:
     """
     List all available Gemini models that support content generation.
 
@@ -59,7 +55,7 @@ class GeminiProvider(AIProvider):
     for structured output.
     """
 
-    def __init__(self, api_key: str, model: Optional[str] = None):
+    def __init__(self, api_key: str, model: str | None = None):
         """
         Initialize the Gemini provider.
 
@@ -82,10 +78,10 @@ class GeminiProvider(AIProvider):
         self._post_schema = self._load_schema("ai/gemini_schema.json")
         self._comment_schema = self._load_schema("ai/gemini_comment_schema.json")
 
-    def _load_schema(self, schema_path: str) -> Optional[Dict]:
+    def _load_schema(self, schema_path: str) -> dict | None:
         """Load a JSON schema from file."""
         try:
-            with open(schema_path, "r") as f:
+            with open(schema_path) as f:
                 return json.load(f)
         except FileNotFoundError:
             logging.error(f"Schema file not found: {schema_path}")
@@ -101,13 +97,13 @@ class GeminiProvider(AIProvider):
     def get_model_name(self) -> str:
         return self._model_name
 
-    def list_available_models(self) -> List[str]:
+    def list_available_models(self) -> list[str]:
         """List all available Gemini models."""
         return list_gemini_models(self.api_key)
 
     async def analyze_posts_batch(
-        self, posts: List[Dict], custom_prompt: Optional[str] = None
-    ) -> List[Dict]:
+        self, posts: list[dict], custom_prompt: str | None = None
+    ) -> list[dict]:
         """
         Analyze a batch of posts using Gemini API.
 
@@ -155,9 +151,7 @@ class GeminiProvider(AIProvider):
         }
 
         try:
-            logging.info(
-                f"Categorizing {len(posts)} posts with Gemini API ({self._model_name})..."
-            )
+            logging.info(f"Categorizing {len(posts)} posts with Gemini API ({self._model_name})...")
 
             response = await async_retry(self._model.generate_content_async)(
                 prompt_text, generation_config=generation_config
@@ -200,8 +194,8 @@ class GeminiProvider(AIProvider):
             return []
 
     def _map_post_results(
-        self, ai_results: List[Dict], post_id_map: Dict, posts: List[Dict]
-    ) -> List[Dict]:
+        self, ai_results: list[dict], post_id_map: dict, posts: list[dict]
+    ) -> list[dict]:
         """Map AI results back to original posts."""
         mapped_results = []
 
@@ -218,9 +212,7 @@ class GeminiProvider(AIProvider):
                         if original_id in post_id_map:
                             original_post = post_id_map[original_id]
                 except (ValueError, IndexError) as e:
-                    logging.warning(
-                        f"Invalid postId format: {post_id_from_ai}. Error: {e}"
-                    )
+                    logging.warning(f"Invalid postId format: {post_id_from_ai}. Error: {e}")
 
             # Fallback: match by content
             if not original_post:
@@ -242,9 +234,7 @@ class GeminiProvider(AIProvider):
                         "ai_sub_category": ai_result.get("subCategory"),
                         "ai_keywords": json.dumps(ai_result.get("keywords", [])),
                         "ai_summary": ai_result.get("summary"),
-                        "ai_is_potential_idea": int(
-                            ai_result.get("isPotentialIdea", False)
-                        ),
+                        "ai_is_potential_idea": int(ai_result.get("isPotentialIdea", False)),
                         "ai_reasoning": ai_result.get("reasoning"),
                         "ai_raw_response": json.dumps(ai_result),
                         "is_processed_by_ai": 1,
@@ -253,16 +243,14 @@ class GeminiProvider(AIProvider):
                 )
                 mapped_results.append(combined_data)
             else:
-                logging.warning(
-                    f"Could not map AI result to original post: {ai_result}"
-                )
+                logging.warning(f"Could not map AI result to original post: {ai_result}")
 
         logging.info(f"Successfully mapped {len(mapped_results)} posts.")
         return mapped_results
 
     def analyze_comments_batch(
-        self, comments: List[Dict], custom_prompt: Optional[str] = None
-    ) -> List[Dict]:
+        self, comments: list[dict], custom_prompt: str | None = None
+    ) -> list[dict]:
         """
         Analyze a batch of comments using Gemini API (synchronous).
 
@@ -322,9 +310,7 @@ class GeminiProvider(AIProvider):
                     if hasattr(response, "prompt_feedback") and response.prompt_feedback
                     else "unknown"
                 )
-                logging.error(
-                    f"Gemini API call for comments failed. Block reason: {block_reason}"
-                )
+                logging.error(f"Gemini API call for comments failed. Block reason: {block_reason}")
                 return []
 
             logging.info("Gemini API call for comments successful.")
@@ -336,7 +322,7 @@ class GeminiProvider(AIProvider):
                 return []
 
             if not isinstance(analysis_results_list, list):
-                logging.error(f"Gemini response for comments was not a list")
+                logging.error("Gemini response for comments was not a list")
                 return []
 
             return self._map_comment_results(analysis_results_list, comment_id_map)
@@ -351,14 +337,10 @@ class GeminiProvider(AIProvider):
             logging.error(f"Google API error during comment analysis: {e}")
             return []
         except Exception as e:
-            logging.error(
-                f"Unexpected error during comment analysis: {type(e).__name__}: {e}"
-            )
+            logging.error(f"Unexpected error during comment analysis: {type(e).__name__}: {e}")
             return []
 
-    def _map_comment_results(
-        self, ai_results: List[Dict], comment_id_map: Dict
-    ) -> List[Dict]:
+    def _map_comment_results(self, ai_results: list[dict], comment_id_map: dict) -> list[dict]:
         """Map AI results back to original comments."""
         mapped_results = []
 
@@ -372,9 +354,7 @@ class GeminiProvider(AIProvider):
                     if original_id in comment_id_map:
                         original_comment = comment_id_map[original_id]
                 except (ValueError, IndexError) as e:
-                    logging.warning(
-                        f"Invalid commentId format: {comment_id_from_ai}. Error: {e}"
-                    )
+                    logging.warning(f"Invalid commentId format: {comment_id_from_ai}. Error: {e}")
 
             if original_comment:
                 combined_data = original_comment.copy()
@@ -382,9 +362,7 @@ class GeminiProvider(AIProvider):
                     {
                         "ai_comment_category": ai_result.get("category"),
                         "ai_comment_sentiment": ai_result.get("sentiment"),
-                        "ai_comment_keywords": json.dumps(
-                            ai_result.get("keywords", [])
-                        ),
+                        "ai_comment_keywords": json.dumps(ai_result.get("keywords", [])),
                         "ai_comment_raw_response": json.dumps(ai_result),
                     }
                 )
@@ -392,7 +370,5 @@ class GeminiProvider(AIProvider):
             else:
                 logging.warning(f"Could not map AI result to comment: {ai_result}")
 
-        logging.info(
-            f"Successfully analyzed and mapped {len(mapped_results)} comments."
-        )
+        logging.info(f"Successfully analyzed and mapped {len(mapped_results)} comments.")
         return mapped_results

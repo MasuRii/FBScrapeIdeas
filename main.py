@@ -1,37 +1,37 @@
 import argparse
-import sqlite3
-import logging
 import asyncio
+import logging
+import sqlite3
 import sys
 from datetime import datetime, timezone
+from typing import Optional
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+
+from config import get_db_path, get_env_file_path, is_first_run, run_setup_wizard
 from database.crud import (
-    get_db_connection,
-    add_scraped_post,
     add_comments_for_post,
-    get_unprocessed_posts,
-    update_post_with_ai_results,
+    add_group,
+    add_scraped_post,
     get_all_categorized_posts,
     get_comments_for_post,
-    get_unprocessed_comments,
-    update_comment_with_ai_results,
-    add_group,
+    get_db_connection,
+    get_distinct_values,
     get_group_by_id,
+    get_unprocessed_comments,
+    get_unprocessed_posts,
     list_groups,
     remove_group,
-    get_distinct_values,
+    update_comment_with_ai_results,
+    update_post_with_ai_results,
 )
 from database.db_setup import init_db
 from database.stats_queries import get_all_statistics
-from config import is_first_run, run_setup_wizard, get_env_file_path, get_db_path
-from typing import Optional
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.getLogger("WDM").setLevel(logging.WARNING)
 logging.getLogger("webdriver_manager").setLevel(logging.WARNING)
 
@@ -41,7 +41,7 @@ CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 
 def get_or_create_group_id(
     conn: sqlite3.Connection, group_url: str, group_name: str = None
-) -> Optional[int]:
+) -> int | None:
     """
     Gets the group_id for a given URL, creating a new group entry if it doesn't exist.
 
@@ -95,13 +95,11 @@ def handle_scrape_command(
         logging.error("Either --group-url or --group-id must be provided")
         return
 
-    logging.info(
-        f"Running scrape command (fetching {num_posts} posts). Headless: {headless}"
-    )
+    logging.info(f"Running scrape command (fetching {num_posts} posts). Headless: {headless}")
 
     # Import scraper-specific modules here to avoid circular imports
-    from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group
     from config import get_facebook_credentials
+    from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group
 
     driver = None
     conn = None
@@ -149,9 +147,7 @@ def handle_scrape_command(
                         if internal_post_id:
                             added_count += 1
                             if post.get("comments"):
-                                add_comments_for_post(
-                                    conn, internal_post_id, post["comments"]
-                                )
+                                add_comments_for_post(conn, internal_post_id, post["comments"])
                         else:
                             logging.warning(
                                 f"Failed to add post {post.get('post_url')}. Skipping comments for this post."
@@ -173,9 +169,7 @@ def handle_scrape_command(
     except ValueError as e:
         logging.error(f"Configuration error: {e}")
     except Exception as e:
-        logging.error(
-            f"An error occurred during the scraping process: {e}", exc_info=True
-        )
+        logging.error(f"An error occurred during the scraping process: {e}", exc_info=True)
     finally:
         if driver:
             try:
@@ -222,19 +216,13 @@ async def handle_process_ai_command(group_id: int = None):
         if not unprocessed_posts:
             logging.info("No unprocessed posts found in the database.")
         else:
-            logging.info(
-                f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database."
-            )
-            for i, post in enumerate(
-                unprocessed_posts[: min(5, len(unprocessed_posts))]
-            ):
+            logging.info(f"Retrieved {len(unprocessed_posts)} unprocessed posts from the database.")
+            for i, post in enumerate(unprocessed_posts[: min(5, len(unprocessed_posts))]):
                 logging.debug(
                     f"  Post {i + 1}: ID={post.get('internal_post_id')}, URL={post.get('post_url')}"
                 )
 
-            logging.info(
-                f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches..."
-            )
+            logging.info(f"Found {len(unprocessed_posts)} unprocessed posts. Creating batches...")
             post_batches = create_post_batches(unprocessed_posts)
 
             processed_count = 0
@@ -256,9 +244,7 @@ async def handle_process_ai_command(group_id: int = None):
                                     logging.debug(
                                         f"Attempting to update post {internal_post_id} with AI results."
                                     )
-                                    update_post_with_ai_results(
-                                        conn, internal_post_id, result
-                                    )
+                                    update_post_with_ai_results(conn, internal_post_id, result)
                                     logging.debug(
                                         f"Successfully updated post {internal_post_id} with AI results."
                                     )
@@ -272,9 +258,7 @@ async def handle_process_ai_command(group_id: int = None):
                                     f"AI result missing 'internal_post_id'. Cannot update database for result: {result}"
                                 )
                     else:
-                        logging.warning(
-                            f"No AI results returned or mapped for batch {i + 1}."
-                        )
+                        logging.warning(f"No AI results returned or mapped for batch {i + 1}.")
                 except Exception as batch_e:
                     logging.error(f"Error processing batch {i + 1}: {batch_e}")
 
@@ -307,9 +291,7 @@ async def handle_process_ai_command(group_id: int = None):
                             comment_id = result.get("comment_id")
                             if comment_id is not None:
                                 try:
-                                    update_comment_with_ai_results(
-                                        conn, comment_id, result
-                                    )
+                                    update_comment_with_ai_results(conn, comment_id, result)
                                     processed_comment_count += 1
                                 except Exception as db_e:
                                     logging.error(
@@ -326,9 +308,7 @@ async def handle_process_ai_command(group_id: int = None):
                 except Exception as batch_e:
                     logging.error(f"Error processing comment batch {i + 1}: {batch_e}")
 
-            logging.info(
-                f"Successfully processed {processed_comment_count} comments with AI."
-            )
+            logging.info(f"Successfully processed {processed_comment_count} comments with AI.")
 
     except Exception as e:
         logging.error(
@@ -360,9 +340,7 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
             "ai_is_potential_idea": "Potential Idea",
         }
         print("\nAvailable filter fields:")
-        for i, (field_key, field_label) in enumerate(
-            filterable_fields.items(), start=1
-        ):
+        for i, (_field_key, field_label) in enumerate(filterable_fields.items(), start=1):
             print(f"{i}. {field_label}")
         print("0. Apply filters and view posts")
         print("-1. Clear all filters")
@@ -441,13 +419,9 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
             filter_value = filters.pop("value", None) if "value" in filters else None
 
             posts = (
-                get_all_categorized_posts(
-                    conn, group_id, filters, filter_field, filter_value
-                )
+                get_all_categorized_posts(conn, group_id, filters, filter_field, filter_value)
                 if group_id
-                else get_all_categorized_posts(
-                    conn, None, filters, filter_field, filter_value
-                )
+                else get_all_categorized_posts(conn, None, filters, filter_field, filter_value)
             )
             if not posts:
                 print("No categorized posts found in the database.")
@@ -468,9 +442,7 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
                 if post.get("ai_sub_category"):
                     print(f"Sub-category: {post['ai_sub_category']}")
                 print(f"Summary: {post.get('ai_summary', 'N/A')}")
-                print(
-                    f"Potential Idea: {'Yes' if post.get('ai_is_potential_idea') else 'No'}"
-                )
+                print(f"Potential Idea: {'Yes' if post.get('ai_is_potential_idea') else 'No'}")
                 if post.get("ai_keywords"):
                     if isinstance(post["ai_keywords"], list):
                         print(f"Keywords: {', '.join(post['ai_keywords'])}")
@@ -483,9 +455,7 @@ def handle_view_command(group_id: int = None, filters: dict = None, limit: int =
                 if comments:
                     print("  Comments:")
                     for comment in comments:
-                        print(
-                            f"    - Commenter: {comment.get('commenter_name', 'N/A')}"
-                        )
+                        print(f"    - Commenter: {comment.get('commenter_name', 'N/A')}")
                         if comment.get("commenter_profile_pic_url"):
                             print(f"      Pic: {comment['commenter_profile_pic_url']}")
                         print(f"      Text: {comment.get('comment_text', 'N/A')}")
@@ -620,9 +590,7 @@ def handle_remove_group_command(group_id: int):
             return
 
         if remove_group(conn, group_id):
-            logging.info(
-                f"Successfully removed group {group['group_name']} (ID: {group_id})"
-            )
+            logging.info(f"Successfully removed group {group['group_name']} (ID: {group_id})")
         else:
             logging.error(f"Failed to remove group {group_id}")
     except Exception as e:

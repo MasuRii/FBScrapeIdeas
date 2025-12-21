@@ -1,7 +1,8 @@
-import sqlite3
 import logging
+import sqlite3
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
 
 def get_total_posts(conn: sqlite3.Connection) -> int:
     """Get total number of posts in database."""
@@ -13,13 +14,14 @@ def get_total_posts(conn: sqlite3.Connection) -> int:
         logging.error(f"Error getting total posts: {e}")
         return 0
 
+
 def get_posts_per_category(conn: sqlite3.Connection) -> list:
     """Get post count per AI category."""
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT ai_category, COUNT(*) 
-            FROM Posts 
+            SELECT ai_category, COUNT(*)
+            FROM Posts
             GROUP BY ai_category
             ORDER BY COUNT(*) DESC;
         """)
@@ -27,6 +29,7 @@ def get_posts_per_category(conn: sqlite3.Connection) -> list:
     except sqlite3.Error as e:
         logging.error(f"Error getting posts per category: {e}")
         return []
+
 
 def get_unprocessed_posts_count(conn: sqlite3.Connection) -> int:
     """Get count of unprocessed posts."""
@@ -38,6 +41,7 @@ def get_unprocessed_posts_count(conn: sqlite3.Connection) -> int:
         logging.error(f"Error getting unprocessed posts count: {e}")
         return 0
 
+
 def get_total_comments(conn: sqlite3.Connection) -> int:
     """Get total number of comments."""
     try:
@@ -47,6 +51,7 @@ def get_total_comments(conn: sqlite3.Connection) -> int:
     except sqlite3.Error as e:
         logging.error(f"Error getting total comments: {e}")
         return 0
+
 
 def get_avg_comments_per_post(conn: sqlite3.Connection) -> float:
     """Calculate average comments per post."""
@@ -66,32 +71,37 @@ def get_avg_comments_per_post(conn: sqlite3.Connection) -> float:
         logging.error(f"Error calculating average comments per post: {e}")
         return 0.0
 
+
 def get_top_authors(conn: sqlite3.Connection, limit: int = 5) -> list:
     """Get top authors by post count."""
     try:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT post_author_name, COUNT(*) as post_count 
-            FROM Posts 
-            GROUP BY post_author_name 
-            ORDER BY post_count DESC 
+        cursor.execute(
+            """
+            SELECT post_author_name, COUNT(*) as post_count
+            FROM Posts
+            GROUP BY post_author_name
+            ORDER BY post_count DESC
             LIMIT ?;
-        """, (limit,))
+        """,
+            (limit,),
+        )
         return cursor.fetchall()
     except sqlite3.Error as e:
         logging.error(f"Error getting top authors: {e}")
         return []
 
+
 def get_all_statistics(conn: sqlite3.Connection) -> dict:
     """Get all statistics in a single dictionary."""
     try:
         return {
-            'total_posts': get_total_posts(conn),
-            'posts_per_category': get_posts_per_category(conn),
-            'unprocessed_posts': get_unprocessed_posts_count(conn),
-            'total_comments': get_total_comments(conn),
-            'avg_comments_per_post': get_avg_comments_per_post(conn),
-            'top_authors': get_top_authors(conn)
+            "total_posts": get_total_posts(conn),
+            "posts_per_category": get_posts_per_category(conn),
+            "unprocessed_posts": get_unprocessed_posts_count(conn),
+            "total_comments": get_total_comments(conn),
+            "avg_comments_per_post": get_avg_comments_per_post(conn),
+            "top_authors": get_top_authors(conn),
         }
     except Exception as e:
         logging.error(f"Error getting all statistics: {e}")
