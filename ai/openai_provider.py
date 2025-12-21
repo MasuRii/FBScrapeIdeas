@@ -7,19 +7,15 @@ supporting custom base URLs for providers like Ollama, LM Studio, OpenRouter, et
 
 import json
 import logging
-import time
 import re
-from typing import List, Dict, Optional
+import time
 
-from openai import OpenAI
-from openai import APIError, APIConnectionError, RateLimitError
+from openai import APIConnectionError, APIError, OpenAI, RateLimitError
 
 from ai.base_provider import AIProvider
-from ai.prompts import get_post_categorization_prompt, get_comment_analysis_prompt
+from ai.prompts import get_comment_analysis_prompt, get_post_categorization_prompt
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 # Default OpenAI settings
@@ -27,7 +23,7 @@ DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
 
-def list_openai_models(base_url: str, api_key: str) -> List[str]:
+def list_openai_models(base_url: str, api_key: str) -> list[str]:
     """
     List available models from an OpenAI-compatible endpoint.
 
@@ -59,9 +55,7 @@ class OpenAIProvider(AIProvider):
     - etc.
     """
 
-    def __init__(
-        self, api_key: str, base_url: Optional[str] = None, model: Optional[str] = None
-    ):
+    def __init__(self, api_key: str, base_url: str | None = None, model: str | None = None):
         """
         Initialize the OpenAI-compatible provider.
 
@@ -84,11 +78,11 @@ class OpenAIProvider(AIProvider):
     def get_model_name(self) -> str:
         return self._model_name
 
-    def list_available_models(self) -> List[str]:
+    def list_available_models(self) -> list[str]:
         """List all available models from the endpoint."""
         return list_openai_models(self.base_url, self.api_key)
 
-    def _extract_json_from_response(self, content: str) -> Optional[List[Dict]]:
+    def _extract_json_from_response(self, content: str) -> list[dict] | None:
         """
         Extract JSON array from response content.
 
@@ -131,8 +125,8 @@ class OpenAIProvider(AIProvider):
         return None
 
     async def analyze_posts_batch(
-        self, posts: List[Dict], custom_prompt: Optional[str] = None
-    ) -> List[Dict]:
+        self, posts: list[dict], custom_prompt: str | None = None
+    ) -> list[dict]:
         """
         Analyze a batch of posts using OpenAI-compatible API.
 
@@ -150,9 +144,7 @@ class OpenAIProvider(AIProvider):
             return []
 
         # Build system prompt with schema
-        system_prompt = custom_prompt or get_post_categorization_prompt(
-            include_schema=True
-        )
+        system_prompt = custom_prompt or get_post_categorization_prompt(include_schema=True)
 
         # Build user prompt with posts
         user_prompt_parts = ["Posts:\n"]
@@ -235,8 +227,8 @@ class OpenAIProvider(AIProvider):
             return []
 
     def _map_post_results(
-        self, ai_results: List[Dict], post_id_map: Dict, posts: List[Dict]
-    ) -> List[Dict]:
+        self, ai_results: list[dict], post_id_map: dict, posts: list[dict]
+    ) -> list[dict]:
         """Map AI results back to original posts."""
         mapped_results = []
 
@@ -253,9 +245,7 @@ class OpenAIProvider(AIProvider):
                         if original_id in post_id_map:
                             original_post = post_id_map[original_id]
                 except (ValueError, IndexError) as e:
-                    logging.warning(
-                        f"Invalid postId format: {post_id_from_ai}. Error: {e}"
-                    )
+                    logging.warning(f"Invalid postId format: {post_id_from_ai}. Error: {e}")
 
             # Fallback: match by summary content
             if not original_post:
@@ -274,9 +264,7 @@ class OpenAIProvider(AIProvider):
                         "ai_sub_category": ai_result.get("subCategory"),
                         "ai_keywords": json.dumps(ai_result.get("keywords", [])),
                         "ai_summary": ai_result.get("summary"),
-                        "ai_is_potential_idea": int(
-                            ai_result.get("isPotentialIdea", False)
-                        ),
+                        "ai_is_potential_idea": int(ai_result.get("isPotentialIdea", False)),
                         "ai_reasoning": ai_result.get("reasoning"),
                         "ai_raw_response": json.dumps(ai_result),
                         "is_processed_by_ai": 1,
@@ -285,16 +273,14 @@ class OpenAIProvider(AIProvider):
                 )
                 mapped_results.append(combined_data)
             else:
-                logging.warning(
-                    f"Could not map AI result to original post: {ai_result}"
-                )
+                logging.warning(f"Could not map AI result to original post: {ai_result}")
 
         logging.info(f"Successfully mapped {len(mapped_results)} posts.")
         return mapped_results
 
     def analyze_comments_batch(
-        self, comments: List[Dict], custom_prompt: Optional[str] = None
-    ) -> List[Dict]:
+        self, comments: list[dict], custom_prompt: str | None = None
+    ) -> list[dict]:
         """
         Analyze a batch of comments using OpenAI-compatible API.
 
@@ -309,9 +295,7 @@ class OpenAIProvider(AIProvider):
             return []
 
         # Build system prompt with schema
-        system_prompt = custom_prompt or get_comment_analysis_prompt(
-            include_schema=True
-        )
+        system_prompt = custom_prompt or get_comment_analysis_prompt(include_schema=True)
 
         # Build user prompt with comments
         user_prompt_parts = ["Comments:\n"]
@@ -360,14 +344,12 @@ class OpenAIProvider(AIProvider):
                                 analysis_results_list = value
                                 break
                         else:
-                            logging.error(f"Response is object but contains no list")
+                            logging.error("Response is object but contains no list")
                             return []
                 elif isinstance(parsed, list):
                     analysis_results_list = parsed
                 else:
-                    logging.error(
-                        f"Unexpected response format for comments: {type(parsed)}"
-                    )
+                    logging.error(f"Unexpected response format for comments: {type(parsed)}")
                     return []
             except json.JSONDecodeError as e:
                 logging.error(f"JSONDecodeError parsing comment response: {e}")
@@ -387,14 +369,10 @@ class OpenAIProvider(AIProvider):
             logging.error(f"API error during comment analysis: {e}")
             return []
         except Exception as e:
-            logging.error(
-                f"Unexpected error during comment analysis: {type(e).__name__}: {e}"
-            )
+            logging.error(f"Unexpected error during comment analysis: {type(e).__name__}: {e}")
             return []
 
-    def _map_comment_results(
-        self, ai_results: List[Dict], comment_id_map: Dict
-    ) -> List[Dict]:
+    def _map_comment_results(self, ai_results: list[dict], comment_id_map: dict) -> list[dict]:
         """Map AI results back to original comments."""
         mapped_results = []
 
@@ -404,15 +382,11 @@ class OpenAIProvider(AIProvider):
 
             if comment_id_from_ai and str(comment_id_from_ai).startswith("COMMENT_ID_"):
                 try:
-                    original_id = int(
-                        str(comment_id_from_ai).replace("COMMENT_ID_", "")
-                    )
+                    original_id = int(str(comment_id_from_ai).replace("COMMENT_ID_", ""))
                     if original_id in comment_id_map:
                         original_comment = comment_id_map[original_id]
                 except (ValueError, IndexError) as e:
-                    logging.warning(
-                        f"Invalid commentId format: {comment_id_from_ai}. Error: {e}"
-                    )
+                    logging.warning(f"Invalid commentId format: {comment_id_from_ai}. Error: {e}")
 
             if original_comment:
                 combined_data = original_comment.copy()
@@ -420,9 +394,7 @@ class OpenAIProvider(AIProvider):
                     {
                         "ai_comment_category": ai_result.get("category"),
                         "ai_comment_sentiment": ai_result.get("sentiment"),
-                        "ai_comment_keywords": json.dumps(
-                            ai_result.get("keywords", [])
-                        ),
+                        "ai_comment_keywords": json.dumps(ai_result.get("keywords", [])),
                         "ai_comment_raw_response": json.dumps(ai_result),
                     }
                 )
@@ -430,7 +402,5 @@ class OpenAIProvider(AIProvider):
             else:
                 logging.warning(f"Could not map AI result to comment: {ai_result}")
 
-        logging.info(
-            f"Successfully analyzed and mapped {len(mapped_results)} comments."
-        )
+        logging.info(f"Successfully analyzed and mapped {len(mapped_results)} comments.")
         return mapped_results

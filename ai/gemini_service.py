@@ -9,19 +9,14 @@ For new code, prefer using:
 """
 
 import logging
-from typing import List, Dict
 
 # Re-export the utility function that's still used directly
 from ai.gemini_provider import GeminiProvider
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
-async def categorize_posts_batch(
-    posts: List[Dict], initial_delay: float = 1.0
-) -> List[Dict]:
+async def categorize_posts_batch(posts: list[dict], initial_delay: float = 1.0) -> list[dict]:
     """
     Asynchronously sends a batch of posts to AI for categorization.
 
@@ -44,7 +39,7 @@ async def categorize_posts_batch(
         return []
 
 
-def process_comments_with_gemini(comments: List[Dict]) -> List[Dict]:
+def process_comments_with_gemini(comments: list[dict]) -> list[dict]:
     """
     Sends a batch of comments to AI for analysis and returns the results.
 
@@ -66,9 +61,7 @@ def process_comments_with_gemini(comments: List[Dict]) -> List[Dict]:
         return []
 
 
-def create_post_batches(
-    all_posts: List[Dict], max_tokens: int = 800000
-) -> List[List[Dict]]:
+def create_post_batches(all_posts: list[dict], max_tokens: int = 800000) -> list[list[dict]]:
     """
     Groups posts into batches based on token count (Gemini 2.0 Flash has 1M token limit).
     Uses 4:1 character-to-token ratio as a safe estimate.
@@ -94,9 +87,7 @@ def create_post_batches(
                 current_batch = []
                 current_tokens = 0
             else:
-                logging.warning(
-                    f"Single post exceeds max tokens ({post_tokens} > {max_tokens})"
-                )
+                logging.warning(f"Single post exceeds max tokens ({post_tokens} > {max_tokens})")
 
         current_batch.append(post)
         current_tokens += post_tokens
@@ -106,18 +97,16 @@ def create_post_batches(
 
     if batches:
         avg_tokens = current_tokens // len(batches) if len(batches) > 0 else 0
-        logging.info(
-            f"Created {len(batches)} batches averaging {avg_tokens} tokens/batch"
-        )
+        logging.info(f"Created {len(batches)} batches averaging {avg_tokens} tokens/batch")
 
     return batches
 
 
 # For backward compatibility with any code importing the module to get models
-def list_available_gemini_models() -> List[str]:
+def list_available_gemini_models() -> list[str]:
     """List available Gemini models. Requires GOOGLE_API_KEY to be set."""
-    from config import get_google_api_key
     from ai.gemini_provider import list_gemini_models
+    from config import get_google_api_key
 
     try:
         api_key = get_google_api_key()

@@ -1,0 +1,14 @@
+# ============================================
+# Development Dependencies
+# ============================================
+# Install with: pip install -r requirements-dev.txt
+# ============================================
+
+# Linting & Formatting
+# Ruff is an extremely fast Python linter (written in Rust)
+# Replaces flake8, black, isort, and more
+ruff>=0.8.0
+
+# Testing (unittest is built-in, no extra deps needed)
+# Add coverage if you want test coverage reports
+# coverage>=7.0.0

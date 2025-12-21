@@ -10,13 +10,11 @@ from typing import Optional
 
 from ai.base_provider import AIProvider
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 def get_ai_provider(
-    provider_type: Optional[str] = None, model: Optional[str] = None, **kwargs
+    provider_type: str | None = None, model: str | None = None, **kwargs
 ) -> AIProvider:
     """
     Factory function to get the appropriate AI provider based on configuration.
@@ -37,10 +35,10 @@ def get_ai_provider(
     from config import (
         get_ai_provider_type,
         get_gemini_model,
-        get_openai_model,
-        get_openai_base_url,
         get_google_api_key,
         get_openai_api_key,
+        get_openai_base_url,
+        get_openai_model,
     )
 
     # Determine provider type
@@ -56,10 +54,10 @@ def get_ai_provider(
         )
 
 
-def _create_gemini_provider(model: Optional[str] = None, **kwargs) -> AIProvider:
+def _create_gemini_provider(model: str | None = None, **kwargs) -> AIProvider:
     """Create a Gemini provider instance."""
-    from config import get_google_api_key, get_gemini_model
     from ai.gemini_provider import GeminiProvider
+    from config import get_gemini_model, get_google_api_key
 
     api_key = kwargs.get("api_key") or get_google_api_key()
     model_name = model or get_gemini_model()
@@ -67,10 +65,10 @@ def _create_gemini_provider(model: Optional[str] = None, **kwargs) -> AIProvider
     return GeminiProvider(api_key=api_key, model=model_name)
 
 
-def _create_openai_provider(model: Optional[str] = None, **kwargs) -> AIProvider:
+def _create_openai_provider(model: str | None = None, **kwargs) -> AIProvider:
     """Create an OpenAI-compatible provider instance."""
-    from config import get_openai_api_key, get_openai_model, get_openai_base_url
     from ai.openai_provider import OpenAIProvider
+    from config import get_openai_api_key, get_openai_base_url, get_openai_model
 
     api_key = kwargs.get("api_key") or get_openai_api_key()
     base_url = kwargs.get("base_url") or get_openai_base_url()

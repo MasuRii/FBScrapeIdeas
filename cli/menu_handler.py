@@ -5,9 +5,9 @@ Handles both interactive menu and command-line argument modes.
 
 import argparse
 import asyncio
+import getpass
 import os
 import re
-import getpass
 from datetime import datetime
 from typing import Optional
 
@@ -74,9 +74,7 @@ def validate_positive_integer(value: str) -> tuple[bool, int]:
     return False, 0
 
 
-def get_validated_input(
-    prompt: str, validator, error_msg: str, allow_empty: bool = True
-) -> str:
+def get_validated_input(prompt: str, validator, error_msg: str, allow_empty: bool = True) -> str:
     """Gets user input with validation and retry logic.
 
     Args:
@@ -109,15 +107,15 @@ def get_ai_provider_status() -> dict:
     Returns:
         Dictionary with provider status information
     """
+    from ai.prompts import get_custom_prompts_path, load_custom_prompts
     from config import (
         get_ai_provider_type,
         get_gemini_model,
-        get_openai_model,
         get_openai_base_url,
+        get_openai_model,
         has_google_api_key,
         has_openai_api_key,
     )
-    from ai.prompts import get_custom_prompts_path, load_custom_prompts
 
     provider = get_ai_provider_type()
     custom_prompts = load_custom_prompts()
@@ -164,15 +162,11 @@ def display_provider_info():
     if status["base_url"] and status["provider"] == "openai":
         print(f"  Base URL: {status['base_url']}")
 
-    key_status = (
-        "[OK] Configured" if status["api_key_configured"] else "[X] Not configured"
-    )
+    key_status = "[OK] Configured" if status["api_key_configured"] else "[X] Not configured"
     print(f"  API Key: {key_status}")
 
     if status["custom_prompts_loaded"]:
-        print(
-            f"  Custom Prompts: [OK] Loaded ({', '.join(status['custom_prompt_keys'])})"
-        )
+        print(f"  Custom Prompts: [OK] Loaded ({', '.join(status['custom_prompt_keys'])})")
     else:
         print("  Custom Prompts: Using defaults")
 
@@ -182,14 +176,14 @@ def display_provider_info():
 def handle_ai_settings_menu():
     """AI Settings submenu for managing AI provider configuration."""
     from config import (
-        save_credential_to_env,
         get_ai_provider_type,
         get_gemini_model,
-        get_openai_model,
+        get_google_api_key,
         get_openai_base_url,
+        get_openai_model,
         has_google_api_key,
         has_openai_api_key,
-        get_google_api_key,
+        save_credential_to_env,
     )
 
     while True:
@@ -199,9 +193,7 @@ def handle_ai_settings_menu():
 
         # Show current status
         status = get_ai_provider_status()
-        provider_name = (
-            "Google Gemini" if status["provider"] == "gemini" else "OpenAI-Compatible"
-        )
+        provider_name = "Google Gemini" if status["provider"] == "gemini" else "OpenAI-Compatible"
 
         print(f"\n  Current Provider: {provider_name}")
         print(f"  Current Model: {status['model']}")
@@ -212,9 +204,7 @@ def handle_ai_settings_menu():
         print(f"  API Key Status: {key_status}")
 
         prompts_status = (
-            "Custom prompts loaded"
-            if status["custom_prompts_loaded"]
-            else "Using defaults"
+            "Custom prompts loaded" if status["custom_prompts_loaded"] else "Using defaults"
         )
         print(f"  Prompts: {prompts_status}")
 
@@ -250,8 +240,8 @@ def handle_ai_settings_menu():
 
 def handle_switch_provider():
     """Handle switching between AI providers."""
-    from config import save_credential_to_env, get_ai_provider_type
     from ai.provider_factory import list_available_providers
+    from config import get_ai_provider_type, save_credential_to_env
 
     current = get_ai_provider_type()
     providers = list_available_providers()
@@ -262,9 +252,7 @@ def handle_switch_provider():
         if provider == "gemini":
             print(f"    {i}. Google Gemini{current_marker}")
         elif provider == "openai":
-            print(
-                f"    {i}. OpenAI-Compatible (OpenAI, Ollama, LM Studio, etc.){current_marker}"
-            )
+            print(f"    {i}. OpenAI-Compatible (OpenAI, Ollama, LM Studio, etc.){current_marker}")
 
     try:
         choice = input("\n  Select provider (1-2, or 0 to cancel): ").strip()
@@ -290,10 +278,10 @@ def handle_switch_provider():
 def handle_gemini_config():
     """Handle Gemini provider configuration."""
     from config import (
-        save_credential_to_env,
         get_gemini_model,
-        has_google_api_key,
         get_google_api_key,
+        has_google_api_key,
+        save_credential_to_env,
     )
 
     print("\n" + "-" * 50)
@@ -328,7 +316,7 @@ def handle_gemini_config():
 
 def handle_select_gemini_model():
     """List and select Gemini models."""
-    from config import save_credential_to_env, get_gemini_model, has_google_api_key
+    from config import get_gemini_model, has_google_api_key, save_credential_to_env
 
     if not has_google_api_key():
         print("\n  [X] Google API key is not configured!")
@@ -349,9 +337,7 @@ def handle_select_gemini_model():
         models = list_gemini_models(api_key)
 
         if not models:
-            print(
-                "  [X] Could not retrieve models. Check your API key and network connection."
-            )
+            print("  [X] Could not retrieve models. Check your API key and network connection.")
             try:
                 input("\n  Press Enter to continue...")
             except (EOFError, KeyboardInterrupt):
@@ -367,12 +353,8 @@ def handle_select_gemini_model():
 
         # Group by type for cleaner display
         flash_models = [m for m in models if "flash" in m.lower()]
-        pro_models = [
-            m for m in models if "pro" in m.lower() and "flash" not in m.lower()
-        ]
-        other_models = [
-            m for m in models if m not in flash_models and m not in pro_models
-        ]
+        pro_models = [m for m in models if "pro" in m.lower() and "flash" not in m.lower()]
+        other_models = [m for m in models if m not in flash_models and m not in pro_models]
 
         all_display = []
 
@@ -403,9 +385,7 @@ def handle_select_gemini_model():
         print("-" * 50)
 
         try:
-            selection = input(
-                f"\n  Select model (1-{len(all_display)}, or 0 to cancel): "
-            ).strip()
+            selection = input(f"\n  Select model (1-{len(all_display)}, or 0 to cancel): ").strip()
 
             if selection == "0":
                 return
@@ -458,10 +438,10 @@ def handle_update_google_api_key():
 def handle_openai_config():
     """Handle OpenAI-compatible provider configuration."""
     from config import (
-        save_credential_to_env,
-        get_openai_model,
         get_openai_base_url,
+        get_openai_model,
         has_openai_api_key,
+        save_credential_to_env,
     )
 
     print("\n" + "-" * 50)
@@ -510,7 +490,7 @@ def handle_openai_config():
 
 def handle_update_openai_base_url():
     """Update OpenAI base URL."""
-    from config import save_credential_to_env, get_openai_base_url
+    from config import get_openai_base_url, save_credential_to_env
 
     current = get_openai_base_url()
     print(f"\n  Current Base URL: {current}")
@@ -558,10 +538,10 @@ def handle_update_openai_base_url():
 def handle_select_openai_model():
     """List and select models from OpenAI-compatible endpoint."""
     from config import (
-        get_openai_base_url,
         get_openai_api_key,
-        save_credential_to_env,
+        get_openai_base_url,
         get_openai_model,
+        save_credential_to_env,
     )
 
     base_url = get_openai_base_url()
@@ -615,9 +595,7 @@ def handle_select_openai_model():
         print("-" * 50)
 
         try:
-            selection = input(
-                f"\n  Select model (1-{len(models)}, or 0 to cancel): "
-            ).strip()
+            selection = input(f"\n  Select model (1-{len(models)}, or 0 to cancel): ").strip()
 
             if selection == "0":
                 return
@@ -649,7 +627,7 @@ def handle_select_openai_model():
 
 def handle_set_openai_model_manually():
     """Manually set OpenAI model name."""
-    from config import save_credential_to_env, get_openai_model
+    from config import get_openai_model, save_credential_to_env
 
     current = get_openai_model()
     print(f"\n  Current Model: {current}")
@@ -673,15 +651,13 @@ def handle_set_openai_model_manually():
 
 def handle_update_openai_api_key():
     """Update OpenAI API key."""
-    from config import save_credential_to_env, get_openai_base_url
+    from config import get_openai_base_url, save_credential_to_env
 
     base_url = get_openai_base_url()
 
     # Check if local provider (may not need key)
     if "localhost" in base_url or "127.0.0.1" in base_url:
-        print(
-            "\n  Note: Local providers (Ollama, LM Studio) often don't require an API key."
-        )
+        print("\n  Note: Local providers (Ollama, LM Studio) often don't require an API key.")
         print("  You can enter 'not-needed' or leave blank.")
     else:
         print("\n  Get your API key from: https://platform.openai.com/api-keys")
@@ -702,10 +678,10 @@ def handle_update_openai_api_key():
 def handle_view_prompts():
     """View current prompts (default and custom)."""
     from ai.prompts import (
-        get_post_categorization_prompt,
-        get_comment_analysis_prompt,
-        load_custom_prompts,
         DEFAULT_PROMPTS,
+        get_comment_analysis_prompt,
+        get_post_categorization_prompt,
+        load_custom_prompts,
     )
 
     print("\n" + "-" * 50)
@@ -764,8 +740,9 @@ def handle_view_prompts():
 
 def handle_show_prompts_path():
     """Show the path where custom prompts should be placed."""
-    from ai.prompts import get_custom_prompts_path, load_custom_prompts
     import os
+
+    from ai.prompts import get_custom_prompts_path, load_custom_prompts
 
     custom_path = get_custom_prompts_path()
     custom_prompts = load_custom_prompts()
@@ -802,12 +779,12 @@ def handle_show_prompts_path():
 def handle_settings_menu():
     """Settings submenu for managing credentials and configuration."""
     from config import (
-        save_credential_to_env,
         delete_env_file,
-        get_env_file_path,
         get_db_path,
-        has_google_api_key,
+        get_env_file_path,
         has_facebook_credentials,
+        has_google_api_key,
+        save_credential_to_env,
     )
 
     while True:
@@ -823,9 +800,7 @@ def handle_settings_menu():
 
         # Show AI provider status
         status = get_ai_provider_status()
-        provider_name = (
-            "Google Gemini" if status["provider"] == "gemini" else "OpenAI-Compatible"
-        )
+        provider_name = "Google Gemini" if status["provider"] == "gemini" else "OpenAI-Compatible"
         print(f"  AI Provider: {provider_name} ({status['model']})")
 
         print("\n  1. Update Google API Key")
@@ -882,9 +857,7 @@ def handle_settings_menu():
 
         elif choice == "5":
             try:
-                confirm = input(
-                    "  Delete all saved credentials? Type 'yes' to confirm: "
-                ).strip()
+                confirm = input("  Delete all saved credentials? Type 'yes' to confirm: ").strip()
                 if confirm.lower() == "yes":
                     if delete_env_file():
                         print("  Credentials deleted!")
@@ -908,21 +881,15 @@ def clear_screen():
 
 def create_arg_parser():
     """Creates and configures the argument parser with all supported commands."""
-    parser = argparse.ArgumentParser(
-        description="University Group Insights Platform CLI"
-    )
+    parser = argparse.ArgumentParser(description="University Group Insights Platform CLI")
     subparsers = parser.add_subparsers(dest="command")
 
     scrape_parser = subparsers.add_parser(
         "scrape", help="Initiate the Facebook scraping process and store results in DB."
     )
     group_group = scrape_parser.add_mutually_exclusive_group(required=True)
-    group_group.add_argument(
-        "--group-url", help="The URL of the Facebook group to scrape."
-    )
-    group_group.add_argument(
-        "--group-id", type=int, help="The ID of an existing group to scrape."
-    )
+    group_group.add_argument("--group-url", help="The URL of the Facebook group to scrape.")
+    group_group.add_argument("--group-id", type=int, help="The ID of an existing group to scrape.")
     scrape_parser.add_argument(
         "--num-posts",
         type=int,
@@ -944,37 +911,23 @@ def create_arg_parser():
     )
 
     view_parser = subparsers.add_parser("view", help="Display posts from the database.")
-    view_parser.add_argument(
-        "--group-id", type=int, help="Only show posts from this group ID."
-    )
+    view_parser.add_argument("--group-id", type=int, help="Only show posts from this group ID.")
     view_parser.add_argument(
         "--category", help="Optional filter to display posts of a specific category."
     )
-    view_parser.add_argument(
-        "--start-date", help="Filter posts by start date (YYYY-MM-DD)."
-    )
-    view_parser.add_argument(
-        "--end-date", help="Filter posts by end date (YYYY-MM-DD)."
-    )
+    view_parser.add_argument("--start-date", help="Filter posts by start date (YYYY-MM-DD).")
+    view_parser.add_argument("--end-date", help="Filter posts by end date (YYYY-MM-DD).")
     view_parser.add_argument("--post-author", help="Filter by post author name.")
     view_parser.add_argument("--comment-author", help="Filter by comment author name.")
-    view_parser.add_argument(
-        "--keyword", help="Keyword search in post and comment content."
-    )
-    view_parser.add_argument(
-        "--min-comments", type=int, help="Minimum number of comments."
-    )
-    view_parser.add_argument(
-        "--max-comments", type=int, help="Maximum number of comments."
-    )
+    view_parser.add_argument("--keyword", help="Keyword search in post and comment content.")
+    view_parser.add_argument("--min-comments", type=int, help="Minimum number of comments.")
+    view_parser.add_argument("--max-comments", type=int, help="Maximum number of comments.")
     view_parser.add_argument(
         "--is-idea",
         action="store_true",
         help="Filter for posts marked as potential ideas.",
     )
-    view_parser.add_argument(
-        "--limit", type=int, help="Limit the number of posts to display"
-    )
+    view_parser.add_argument("--limit", type=int, help="Limit the number of posts to display")
 
     export_parser = subparsers.add_parser(
         "export-data", help="Export data (posts or comments) to CSV or JSON file."
@@ -995,44 +948,24 @@ def create_arg_parser():
     export_parser.add_argument(
         "--category", help="Optional filter to export posts of a specific category."
     )
-    export_parser.add_argument(
-        "--start-date", help="Filter posts by start date (YYYY-MM-DD)."
-    )
-    export_parser.add_argument(
-        "--end-date", help="Filter posts by end date (YYYY-MM-DD)."
-    )
+    export_parser.add_argument("--start-date", help="Filter posts by start date (YYYY-MM-DD).")
+    export_parser.add_argument("--end-date", help="Filter posts by end date (YYYY-MM-DD).")
     export_parser.add_argument("--post-author", help="Filter by post author name.")
-    export_parser.add_argument(
-        "--comment-author", help="Filter by comment author name."
-    )
-    export_parser.add_argument(
-        "--keyword", help="Keyword search in post and comment content."
-    )
-    export_parser.add_argument(
-        "--min-comments", type=int, help="Minimum number of comments."
-    )
-    export_parser.add_argument(
-        "--max-comments", type=int, help="Maximum number of comments."
-    )
+    export_parser.add_argument("--comment-author", help="Filter by comment author name.")
+    export_parser.add_argument("--keyword", help="Keyword search in post and comment content.")
+    export_parser.add_argument("--min-comments", type=int, help="Minimum number of comments.")
+    export_parser.add_argument("--max-comments", type=int, help="Maximum number of comments.")
     export_parser.add_argument(
         "--is-idea",
         action="store_true",
         help="Filter for posts marked as potential ideas.",
     )
 
-    add_group_parser = subparsers.add_parser(
-        "add-group", help="Add a new Facebook group to track."
-    )
-    add_group_parser.add_argument(
-        "--name", required=True, help="Name of the Facebook group."
-    )
-    add_group_parser.add_argument(
-        "--url", required=True, help="URL of the Facebook group."
-    )
+    add_group_parser = subparsers.add_parser("add-group", help="Add a new Facebook group to track.")
+    add_group_parser.add_argument("--name", required=True, help="Name of the Facebook group.")
+    add_group_parser.add_argument("--url", required=True, help="URL of the Facebook group.")
 
-    list_groups_parser = subparsers.add_parser(
-        "list-groups", help="List all tracked Facebook groups."
-    )
+    subparsers.add_parser("list-groups", help="List all tracked Facebook groups.")
 
     remove_group_parser = subparsers.add_parser(
         "remove-group", help="Remove a Facebook group from tracking."
@@ -1041,13 +974,11 @@ def create_arg_parser():
         "--id", type=int, required=True, help="ID of the group to remove."
     )
 
-    stats_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "stats", help="Display summary statistics about the data in the database."
     )
 
-    setup_parser = subparsers.add_parser(
-        "setup", help="Run the setup wizard to configure credentials."
-    )
+    subparsers.add_parser("setup", help="Run the setup wizard to configure credentials.")
 
     return parser
 
@@ -1108,9 +1039,7 @@ def run_interactive_menu(command_handlers):
                     num_posts = 20
 
                 headless_input = (
-                    input("Run in headless mode? (yes/no, default: no): ")
-                    .strip()
-                    .lower()
+                    input("Run in headless mode? (yes/no, default: no): ").strip().lower()
                 )
                 headless = headless_input == "yes"
 
@@ -1131,9 +1060,7 @@ def run_interactive_menu(command_handlers):
                 # Check if provider is configured
                 status = get_ai_provider_status()
                 if not status["api_key_configured"]:
-                    print(
-                        "\n  [!] Warning: API key not configured for current provider!"
-                    )
+                    print("\n  [!] Warning: API key not configured for current provider!")
                     print("  Configure it in Settings > AI Provider Settings")
                     proceed = input("\n  Continue anyway? (y/n): ").strip().lower()
                     if proceed != "y":
@@ -1177,9 +1104,7 @@ def run_interactive_menu(command_handlers):
                 if post_author:
                     filters["post_author"] = post_author
 
-                comment_author = input(
-                    "Filter by comment author name (optional): "
-                ).strip()
+                comment_author = input("Filter by comment author name (optional): ").strip()
                 if comment_author:
                     filters["comment_author"] = comment_author
 
@@ -1204,9 +1129,7 @@ def run_interactive_menu(command_handlers):
                         print("Invalid number for maximum comments, ignoring filter.")
 
                 is_idea = (
-                    input("Show only potential ideas? (yes/no, default: no): ")
-                    .strip()
-                    .lower()
+                    input("Show only potential ideas? (yes/no, default: no): ").strip().lower()
                 )
                 if is_idea == "yes":
                     filters["is_idea"] = True

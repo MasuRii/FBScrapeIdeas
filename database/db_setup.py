@@ -1,23 +1,24 @@
-import sqlite3
 import logging
+import sqlite3
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
-def get_db_path(db_name: str = 'insights.db') -> str:
+def get_db_path(db_name: str = "insights.db") -> str:
     """
     Get the database path using the centralized config function.
     Falls back to local db_name if config is not available.
     """
     try:
         from config import get_db_path as config_get_db_path
+
         return config_get_db_path(db_name)
     except ImportError:
         # Fallback if config module not available
         return db_name
 
 
-def init_db(db_name: str = 'insights.db'):
+def init_db(db_name: str = "insights.db"):
     """
     Initializes the SQLite database and creates required tables if they don't exist.
     Now supports multiple Facebook groups with Groups table.
@@ -27,24 +28,24 @@ def init_db(db_name: str = 'insights.db'):
     """
     db_path = get_db_path(db_name)
     conn = None
-    
+
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        
-        # Enable foreign key constraint enforcement
-        cursor.execute('PRAGMA foreign_keys = ON')
 
-        cursor.execute('''
+        # Enable foreign key constraint enforcement
+        cursor.execute("PRAGMA foreign_keys = ON")
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS Groups (
                 group_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_name TEXT UNIQUE NOT NULL,
                 group_url TEXT UNIQUE NOT NULL,
                 last_scraped_at TIMESTAMP
             )
-        ''')
+        """)
 
-        cursor.execute('''
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS Posts (
                 internal_post_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_id INTEGER NOT NULL,
@@ -67,9 +68,9 @@ def init_db(db_name: str = 'insights.db'):
                 last_ai_processing_at TIMESTAMP,
                 FOREIGN KEY (group_id) REFERENCES Groups(group_id)
             )
-        ''')
+        """)
 
-        cursor.execute('''
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS Comments (
                 comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 internal_post_id INTEGER,
@@ -86,10 +87,12 @@ def init_db(db_name: str = 'insights.db'):
                 last_ai_processing_at_comment TIMESTAMP,
                 FOREIGN KEY (internal_post_id) REFERENCES Posts(internal_post_id)
             )
-        ''')
+        """)
 
         conn.commit()
-        logging.info(f"Database '{db_path}' initialized with Groups and Posts tables created or verified.")
+        logging.info(
+            f"Database '{db_path}' initialized with Groups and Posts tables created or verified."
+        )
 
     except sqlite3.Error as e:
         logging.error(f"Database error: {e}")
@@ -99,5 +102,6 @@ def init_db(db_name: str = 'insights.db'):
         if conn:
             conn.close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     init_db()

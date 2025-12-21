@@ -7,7 +7,7 @@ Re-exports get_facebook_credentials from config for backward compatibility.
 from config import get_facebook_credentials
 
 # Re-export for any modules that import from auth_handler
-__all__ = ['get_facebook_credentials']
+__all__ = ["get_facebook_credentials"]
 
 if __name__ == "__main__":
     try:

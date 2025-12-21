@@ -1,0 +1,114 @@
+# ============================================
+# PR Quality Check Workflow
+# ============================================
+# Runs linting and tests on pull requests to main branch.
+# Two-stage workflow: lint first (fast-fail), then test.
+#
+# Triggers:
+#   - Pull requests targeting main branch
+#   - Push to main (for status badges)
+# ============================================
+
+name: PR Quality Check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel in-progress runs when a new commit is pushed
+# Saves CI minutes and prevents queue buildup
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Restrict permissions to minimum required
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  # ============================================
+  # Job 1: Linting (Fast-fail)
+  # ============================================
+  # Runs first because it's fast (seconds) and catches
+  # style/syntax issues before running slower tests.
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-lint-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-lint-
+
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint with Ruff
+        # --output-format=github creates inline annotations in PR diff
+        run: ruff check --output-format=github .
+
+      - name: Format check with Ruff
+        run: ruff format --check .
+
+  # ============================================
+  # Job 2: Tests (depends on lint passing)
+  # ============================================
+  # Runs unittest tests after linting passes.
+  # This ensures we don't waste CI time on tests if
+  # basic code quality issues exist.
+  test:
+    name: Run Tests
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-test-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-test-
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run tests with unittest
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "✅ Test run completed"
+          echo "Python version: $(python --version)"

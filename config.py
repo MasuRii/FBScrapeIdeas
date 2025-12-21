@@ -1,12 +1,11 @@
-import os
-import sys
 import getpass
 import logging
+import os
+import sys
+
 from dotenv import load_dotenv
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # --- Platform-Appropriate Data Directory ---
 
@@ -14,7 +13,7 @@ logging.basicConfig(
 def get_app_data_dir() -> str:
     r"""
     Get the platform-appropriate application data directory.
-    
+
     Returns:
         - Windows: %APPDATA%\FBScrapeIdeas\
         - macOS: ~/Library/Application Support/FBScrapeIdeas/
@@ -132,7 +131,7 @@ def save_credential_to_env(key: str, value: str) -> bool:
         # Read existing content
         existing_lines = []
         if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
+            with open(env_path, encoding="utf-8") as f:
                 existing_lines = f.readlines()
 
         # Update or add the key
@@ -217,7 +216,7 @@ def get_google_api_key() -> str:
         api_key = getpass.getpass("Enter Google API Key: ").strip()
     except (EOFError, KeyboardInterrupt):
         print("\n")
-        raise ValueError("Google API key is required for AI features.")
+        raise ValueError("Google API key is required for AI features.") from None
 
     if not api_key:
         raise ValueError("Google API key is required for AI features.")
@@ -229,9 +228,7 @@ def get_google_api_key() -> str:
             if save_credential_to_env("GOOGLE_API_KEY", api_key):
                 print("  API key saved!")
             else:
-                print(
-                    "  Warning: Failed to save API key. It will need to be re-entered next time."
-                )
+                print("  Warning: Failed to save API key. It will need to be re-entered next time.")
     except (EOFError, KeyboardInterrupt):
         print("\n  Skipping save.")
 
@@ -257,9 +254,7 @@ def get_facebook_credentials() -> tuple[str, str]:
         logging.info("Loading Facebook credentials from environment variables.")
         return fb_user, fb_pass
 
-    logging.info(
-        "Facebook credentials not found in environment variables. Prompting user."
-    )
+    logging.info("Facebook credentials not found in environment variables. Prompting user.")
     print("\n" + "=" * 50)
     print("  Facebook Credentials Required")
     print("=" * 50)
@@ -270,7 +265,7 @@ def get_facebook_credentials() -> tuple[str, str]:
         password = getpass.getpass("Enter Facebook Password: ")
     except (EOFError, KeyboardInterrupt):
         print("\n")
-        raise ValueError("Facebook email and password are required.")
+        raise ValueError("Facebook email and password are required.") from None
 
     if not username or not password:
         raise ValueError("Facebook email and password are required.")
@@ -393,7 +388,7 @@ def get_openai_api_key() -> str:
         api_key = getpass.getpass("Enter OpenAI API Key: ").strip()
     except (EOFError, KeyboardInterrupt):
         print("\n")
-        raise ValueError("OpenAI API key is required for AI features.")
+        raise ValueError("OpenAI API key is required for AI features.") from None
 
     if not api_key:
         raise ValueError("OpenAI API key is required for AI features.")
@@ -405,9 +400,7 @@ def get_openai_api_key() -> str:
             if save_credential_to_env("OPENAI_API_KEY", api_key):
                 print("  API key saved!")
             else:
-                print(
-                    "  Warning: Failed to save API key. It will need to be re-entered next time."
-                )
+                print("  Warning: Failed to save API key. It will need to be re-entered next time.")
     except (EOFError, KeyboardInterrupt):
         print("\n  Skipping save.")
 
@@ -447,9 +440,7 @@ def run_setup_wizard() -> None:
     print("    Get your key: https://aistudio.google.com/apikey")
 
     try:
-        api_key = getpass.getpass(
-            "    Enter API Key (or press Enter to skip): "
-        ).strip()
+        api_key = getpass.getpass("    Enter API Key (or press Enter to skip): ").strip()
         if api_key:
             if save_credential_to_env("GOOGLE_API_KEY", api_key):
                 print("    Saved!")

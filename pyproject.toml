@@ -1,0 +1,85 @@
+# ============================================
+# pyproject.toml - Project Configuration
+# ============================================
+# Configuration for Ruff linter and other Python tools.
+# See: https://docs.astral.sh/ruff/configuration/
+# ============================================
+
+[project]
+name = "fbscrapeideas"
+version = "0.1.0"
+description = "CLI app for scraping Facebook groups with AI-powered categorization"
+requires-python = ">=3.11"
+
+[tool.ruff]
+# Target Python 3.11
+target-version = "py311"
+
+# Line length (match common standard)
+line-length = 100
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".github",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.pyc",
+    "build",
+    "dist",
+    "*.egg-info",
+    "memory-bank",
+]
+
+[tool.ruff.lint]
+# Enable recommended rules
+# E = pycodestyle errors
+# F = Pyflakes
+# I = isort (import sorting)
+# W = pycodestyle warnings
+# UP = pyupgrade (Python version upgrades)
+# B = flake8-bugbear (common bugs)
+# SIM = flake8-simplify
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes
+    "I",      # isort
+    "W",      # pycodestyle warnings
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+]
+
+# Ignore specific rules that may conflict with existing code
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "E402",   # Module level import not at top of file (sometimes needed)
+    "F401",   # Imported but unused (may be intentional re-exports)
+    "B008",   # Do not perform function calls in argument defaults
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+# Allow unused imports in __init__.py files (re-exports)
+"__init__.py" = ["F401"]
+# Allow more flexibility in test files
+"tests/*" = ["B", "E501"]
+
+[tool.ruff.lint.isort]
+# Match existing import style
+known-first-party = ["ai", "cli", "database", "export", "scraper"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+# Use double quotes (Python standard)
+quote-style = "double"
+
+# Use spaces for indentation
+indent-style = "space"
+
+# Unix-style line endings
+line-ending = "lf"
