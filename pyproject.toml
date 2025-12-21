@@ -87,7 +87,7 @@ line-ending = "lf"
 [tool.semantic_release]
 version_variables = ["version.py:__version__"]
 version_toml = ["pyproject.toml:project.version"]
-branches = ["master"]
+branches.master = { match = "master" }
 commit_parser = "emoji"
 logging_use_named_masks = true
 major_on_zero = true
