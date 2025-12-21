@@ -108,7 +108,17 @@ Before you begin, ensure you have the following:
 
 ## 🚀 Getting Started
 
-### Installation
+### 📦 Option 1: Binary Release (Easiest)
+For most users, we recommend using the pre-compiled binaries:
+1.  **Download** the latest version for your platform from the [Releases](https://github.com/MasuRii/FBScrapeIdeas/releases) page.
+2.  **Run the application:**
+    - **Windows:** Double-click `FBScrapeIdeas-windows-x64.exe`.
+    - **macOS/Linux:** Open a terminal, make the file executable (`chmod +x FBScrapeIdeas-*`), and run it.
+3.  **Interactive Setup:** On the first launch, the application will guide you through an interactive wizard to configure your API keys and credentials. **No manual `.env` file creation is required!**
+
+---
+
+### 🛠️ Option 2: Running from Source (For Developers)
 
 1.  **Clone the repository:**
     ```bash
@@ -130,7 +140,9 @@ Before you begin, ensure you have the following:
     pip install -r requirements.txt
     ```
 
-### Configuration
+### Configuration (Manual)
+
+If you prefer to configure the application manually (e.g., for automated environments):
 
 1.  **Set up Environment Variables:**
     Create a `.env` file in the project root:
@@ -143,14 +155,9 @@ Before you begin, ensure you have the following:
     # Gemini Configuration
     GOOGLE_API_KEY=YOUR_GEMINI_API_KEY_HERE
     GEMINI_MODEL=models/gemini-2.5-flash
-    
-    # OpenAI-Compatible Configuration (Optional)
-    # OPENAI_API_KEY=sk-...
-    # OPENAI_BASE_URL=https://api.openai.com/v1
-    # OPENAI_MODEL=gpt-5o
     ```
     (See [AI Provider Configuration](#ai-provider-configuration) for more details)
-    > Note: Facebook credentials are entered securely during scraping
+    > Note: Facebook credentials are entered securely during scraping or saved during the first-run interactive session.
 
 2.  **WebDriver Setup:**
     `webdriver-manager` will handle this automatically on the first run.

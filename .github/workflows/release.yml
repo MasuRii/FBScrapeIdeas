@@ -275,16 +275,14 @@ jobs:
           
           ## 🚀 Quick Start
           
-          1. **Download** the appropriate binary for your platform from the assets below
-          2. **Create a `.env` file** in the same directory with your credentials:
-             ```env
-             GEMINI_API_KEY=your_gemini_api_key_here
-             ```
-          3. **Run the application**:
-             - **Windows**: Double-click or run `FBScrapeIdeas-windows-x64.exe` in Command Prompt
-             - **macOS/Linux**: Open terminal and run `./FBScrapeIdeas-<platform>-<arch>`
+          1. **Download** the appropriate binary for your platform from the assets below.
+          2. **Run the application**:
+             - **Windows**: Double-click or run `FBScrapeIdeas-windows-x64.exe` in Command Prompt.
+             - **macOS/Linux**: Open terminal and run the binary.
           
-          ## 🔐 First Run
+          On first launch, the application will guide you through an interactive setup to configure your API keys and credentials. No manual file creation is required!
+          
+          ## 🔐 Authentication
           
           On first run, you'll need to:
           1. Log in to Facebook through the browser window that opens
