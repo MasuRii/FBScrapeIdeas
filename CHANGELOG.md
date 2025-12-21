@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.8.2 (2025-12-21)
+
+### 📚
+
+- 📚 [docs] Update Quick Start instructions for interactive setup
+  ([`1800b3c`](https://github.com/MasuRii/FBScrapeIdeas/commit/1800b3ce9e97557e7deff076d93db2b640925077))
+
+📝 Summary: Corrected misleading instructions in the README and release workflow. Clarified that
+  `.env` files are not required for binary releases due to the interactive setup wizard.
+
+🔧 Changes: - Simplified the `Quick Start` guide in `.github/workflows/release.yml`. - Reorganized
+  `README.md` to highlight the Binary Release as the primary path for users. - Added explicit
+  mention of the interactive setup wizard to reduce user friction.
+
+
 ## v0.8.1 (2025-12-21)
 
 ### 🐛
