@@ -1,21 +1,22 @@
 # ============================================
 # PR Quality Check Workflow
 # ============================================
-# Runs linting and tests on pull requests to main branch.
+# Runs linting and tests on pull requests to master branch.
 # Two-stage workflow: lint first (fast-fail), then test.
 #
 # Triggers:
-#   - Pull requests targeting main branch
-#   - Push to main (for status badges)
+#   - Pull requests targeting master branch
+#   - Push to master (for status badges)
 # ============================================
 
 name: PR Quality Check
 
 on:
   pull_request:
-    branches: [main]
+    branches: [master]
   push:
-    branches: [main]
+    branches: [master]
+
 
 # Cancel in-progress runs when a new commit is pushed
 # Saves CI minutes and prevents queue buildup

@@ -7,7 +7,7 @@
 
 [project]
 name = "fbscrapeideas"
-version = "0.1.0"
+version = "1.0.0"
 description = "CLI app for scraping Facebook groups with AI-powered categorization"
 requires-python = ">=3.11"
 
@@ -83,3 +83,20 @@ indent-style = "space"
 
 # Unix-style line endings
 line-ending = "lf"
+
+[tool.semantic_release]
+version_variables = ["version.py:__version__"]
+version_toml = ["pyproject.toml:project.version"]
+branches = ["master"]
+commit_parser = "emoji"
+logging_use_named_masks = true
+major_on_zero = true
+upload_to_release = false
+upload_to_repository = false
+commit_message = "{version} [skip ci]"
+
+[tool.semantic_release.commit_parser_options]
+major_tags = ["🚨"]
+minor_tags = ["✨"]
+patch_tags = ["🐛", "🔒", "🛠", "⚡️", "📚", "🏗", "♻️", "🚦", "🎨", "📦", "🔖"]
+

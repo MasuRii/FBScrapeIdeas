@@ -2,8 +2,10 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
 
 permissions:
   contents: write
@@ -36,15 +38,25 @@ jobs:
         id: check_tag
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$VERSION" != "$TAG_VERSION" ]; then
+              echo "::warning::Version in version.py ($VERSION) does not match tag ($TAG_VERSION)"
+            fi
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "should_release=false" >> $GITHUB_OUTPUT
-            echo "Tag v$VERSION already exists. Skipping release."
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
             echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "Tag v$VERSION does not exist. Will create release."
+          else
+            if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+              echo "exists=true" >> $GITHUB_OUTPUT
+              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "Tag v$VERSION already exists. Skipping release."
+            else
+              echo "exists=false" >> $GITHUB_OUTPUT
+              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "Tag v$VERSION does not exist. Will create release."
+            fi
           fi
+
 
   # ============================================
   # Job 2: Build executables for all platforms
@@ -280,7 +292,7 @@ jobs:
           
           ## 📖 Documentation
           
-          See the [README](https://github.com/${{ github.repository }}/blob/main/README.md) for detailed usage instructions.
+          See the [README](https://github.com/${{ github.repository }}/blob/master/README.md) for detailed usage instructions.
           
           ---
           
@@ -293,15 +305,8 @@ jobs:
           echo "Release notes generated:"
           cat release_notes.md
 
-      - name: Create Git tag
-        run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$VERSION" -m "Release v$VERSION"
-          git push origin "v$VERSION"
-
       - name: Create GitHub Release
+
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare.outputs.version }}

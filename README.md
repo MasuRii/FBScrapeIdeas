@@ -287,7 +287,7 @@ The developers assume no liability for misuse of this tool. Scraping may violate
 [python-shield]: https://img.shields.io/badge/Python-3.9%2B-blue.svg
 [python-url]: https://www.python.org/downloads/
 [license-shield]: https://img.shields.io/github/license/MasuRii/FBScrapeIdeas
-[license-url]: https://github.com/MasuRii/FBScrapeIdeas/blob/main/LICENSE
+[license-url]: https://github.com/MasuRii/FBScrapeIdeas/blob/master/LICENSE
 [issues-shield]: https://img.shields.io/github/issues/MasuRii/FBScrapeIdeas
 [issues-url]: https://github.com/MasuRii/FBScrapeIdeas/issues
 [forks-shield]: https://img.shields.io/github/forks/MasuRii/FBScrapeIdeas
