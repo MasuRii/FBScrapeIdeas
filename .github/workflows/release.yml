@@ -77,13 +77,13 @@ jobs:
             pyinstaller-args: --onefile --name FBScrapeIdeas-windows-x64
             
           - name: macOS Intel
-            os: macos-13
+            os: macos-latest
             python-version: "3.11"
             artifact-name: FBScrapeIdeas-macos-x64
             pyinstaller-args: --onefile --name FBScrapeIdeas-macos-x64
             
           - name: macOS Apple Silicon
-            os: macos-14
+            os: macos-latest
             python-version: "3.11"
             artifact-name: FBScrapeIdeas-macos-arm64
             pyinstaller-args: --onefile --name FBScrapeIdeas-macos-arm64
