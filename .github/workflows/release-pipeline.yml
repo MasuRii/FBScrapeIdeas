@@ -1,70 +1,41 @@
-name: Build and Release
+name: Release Pipeline
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - master
   workflow_dispatch:
-
 
 permissions:
   contents: write
 
 jobs:
-  # ============================================
-  # Job 1: Check version and prepare release
-  # ============================================
-  prepare:
-    name: Prepare Release
+  bump:
+    name: Bump Version
     runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     outputs:
-      version: ${{ steps.get_version.outputs.version }}
-      tag_exists: ${{ steps.check_tag.outputs.exists }}
-      should_release: ${{ steps.check_tag.outputs.should_release }}
+      released: ${{ steps.semantic.outputs.released }}
+      version: ${{ steps.semantic.outputs.version }}
+      tag: ${{ steps.semantic.outputs.tag }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get version from version.py
-        id: get_version
-        run: |
-          VERSION=$(python -c "exec(open('version.py').read()); print(__version__)")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Detected version: $VERSION"
+      - name: Python Semantic Release
+        id: semantic
+        uses: python-semantic-release/python-semantic-release@v9.15.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions[bot]"
+          git_committer_email: "github-actions[bot]@users.noreply.github.com"
 
-      - name: Check if tag exists
-        id: check_tag
-        run: |
-          VERSION="${{ steps.get_version.outputs.version }}"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            TAG_VERSION="${GITHUB_REF_NAME#v}"
-            if [ "$VERSION" != "$TAG_VERSION" ]; then
-              echo "::warning::Version in version.py ($VERSION) does not match tag ($TAG_VERSION)"
-            fi
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "should_release=true" >> $GITHUB_OUTPUT
-          else
-            if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-              echo "exists=true" >> $GITHUB_OUTPUT
-              echo "should_release=false" >> $GITHUB_OUTPUT
-              echo "Tag v$VERSION already exists. Skipping release."
-            else
-              echo "exists=false" >> $GITHUB_OUTPUT
-              echo "should_release=true" >> $GITHUB_OUTPUT
-              echo "Tag v$VERSION does not exist. Will create release."
-            fi
-          fi
-
-
-  # ============================================
-  # Job 2: Build executables for all platforms
-  # ============================================
   build:
     name: Build ${{ matrix.name }}
-    needs: prepare
-    if: needs.prepare.outputs.should_release == 'true'
+    needs: bump
+    if: needs.bump.outputs.released == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -176,13 +147,10 @@ jobs:
           path: dist/${{ matrix.artifact-name }}
           retention-days: 1
 
-  # ============================================
-  # Job 3: Create GitHub Release
-  # ============================================
   release:
     name: Create Release
-    needs: [prepare, build]
-    if: needs.prepare.outputs.should_release == 'true'
+    needs: [bump, build]
+    if: needs.bump.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -219,27 +187,26 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
+          VERSION="${{ needs.bump.outputs.version }}"
           
-          # Find the previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          # Find the previous tag (the one before the new tag)
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           
           if [ -z "$PREV_TAG" ]; then
-            echo "No previous tag found. Including all commits."
+            echo "No previous tag found. Including recent commits."
             CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges HEAD~20..HEAD 2>/dev/null || git log --pretty=format:"- %s (%h)" --no-merges)
           else
             echo "Previous tag: $PREV_TAG"
             CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges ${PREV_TAG}..HEAD)
           fi
           
-          # Save changelog to file (handles multiline properly)
+          # Save changelog to file
           echo "$CHANGELOG" > changelog.txt
-          echo "changelog_file=changelog.txt" >> $GITHUB_OUTPUT
 
       - name: Create release notes
         run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
-          CHANGELOG=$(cat changelog.txt)
+          VERSION="${{ needs.bump.outputs.version }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           
           cat << 'RELEASE_NOTES' > release_notes.md
           # 🚀 FB Scrape Ideas v${VERSION}
@@ -294,7 +261,7 @@ jobs:
           
           ---
           
-          **Full Changelog**: https://github.com/${{ github.repository }}/compare/v${PREV_VERSION:-initial}...v${VERSION}
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-initial}...${{ needs.bump.outputs.tag }}
           RELEASE_NOTES_END
           
           # Replace version placeholder
@@ -303,12 +270,11 @@ jobs:
           echo "Release notes generated:"
           cat release_notes.md
 
-      - name: Create GitHub Release
-
+      - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.prepare.outputs.version }}
-          name: FB Scrape Ideas v${{ needs.prepare.outputs.version }}
+          tag_name: ${{ needs.bump.outputs.tag }}
+          name: FB Scrape Ideas v${{ needs.bump.outputs.version }}
           body_path: release_notes.md
           draft: false
           prerelease: false
@@ -317,17 +283,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ============================================
-  # Job 4: Cleanup on failure
-  # ============================================
   cleanup:
     name: Cleanup on Failure
-    needs: [prepare, build, release]
+    needs: [bump, build, release]
     if: failure()
     runs-on: ubuntu-latest
     steps:
       - name: Report failure
         run: |
           echo "❌ Release workflow failed!"
-          echo "Version: ${{ needs.prepare.outputs.version }}"
           echo "Please check the logs above for details."
