@@ -37,12 +37,30 @@ def is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
+def get_project_root() -> str:
+    """
+    Get the project root directory.
+
+    For development mode, this returns the directory containing the config.py file,
+    which is the project root. This is more reliable than os.getcwd() which can
+    vary depending on where the command is run from.
+
+    Returns:
+        Absolute path to the project root directory
+    """
+    # Use the directory containing this config.py file as the project root
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 def get_env_file_path() -> str:
     """
     Get the path to the .env file.
 
     - For frozen executables: Uses platform-appropriate app data directory
-    - For development: Uses current directory, but checks app data dir for existing .env first
+    - For development: Always uses project directory for consistency
+
+    This ensures development environments have their .env in the project folder
+    for easy access and version control awareness (though .env should be gitignored).
     """
     if is_frozen():
         # Use platform-appropriate app data directory for frozen builds
@@ -50,19 +68,11 @@ def get_env_file_path() -> str:
         os.makedirs(app_dir, exist_ok=True)
         return os.path.join(app_dir, ".env")
     else:
-        # Development mode - prefer current directory .env if it exists
-        local_env = os.path.join(os.getcwd(), ".env")
-        if os.path.exists(local_env):
-            return local_env
-
-        # Check if app data dir has an existing .env (for persistence across dev runs)
-        app_dir = get_app_data_dir()
-        app_env = os.path.join(app_dir, ".env")
-        if os.path.exists(app_env):
-            return app_env
-
-        # Default to local .env for new development setups
-        return local_env
+        # Development mode - always use project directory
+        # Use project root instead of CWD for consistency regardless of where
+        # the command is executed from
+        project_dir = get_project_root()
+        return os.path.join(project_dir, ".env")
 
 
 def get_db_path(db_name: str = "insights.db") -> str:
@@ -70,26 +80,24 @@ def get_db_path(db_name: str = "insights.db") -> str:
     Get the database path, using app data directory for frozen builds.
 
     - For frozen executables: Uses platform-appropriate app data directory
-    - For development: Uses current directory, but supports app data dir if DB exists there
+    - For development: Always uses project directory (not AppData)
+
+    This ensures development environments have their database in the project folder
+    for easy access and debugging, while release builds use system-appropriate
+    data directories.
     """
     if is_frozen():
+        # Frozen builds use platform-appropriate app data directory
         app_dir = get_app_data_dir()
         os.makedirs(app_dir, exist_ok=True)
         return os.path.join(app_dir, db_name)
     else:
-        # Development mode - prefer current directory
-        local_db = os.path.join(os.getcwd(), db_name)
-        if os.path.exists(local_db):
-            return local_db
-
-        # Check if app data dir has an existing DB
-        app_dir = get_app_data_dir()
-        app_db = os.path.join(app_dir, db_name)
-        if os.path.exists(app_db):
-            return app_db
-
-        # Default to local db for new development setups
-        return local_db
+        # Development mode - always use project directory
+        # Use project root instead of CWD for consistency regardless of where
+        # the command is executed from
+        project_dir = get_project_root()
+        db_path = os.path.join(project_dir, db_name)
+        return db_path
 
 
 # --- Load .env from appropriate location ---
