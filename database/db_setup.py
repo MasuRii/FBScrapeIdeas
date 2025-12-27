@@ -66,7 +66,7 @@ def init_db(db_name: str = "insights.db"):
                 ai_raw_response TEXT, -- Storing as JSON string
                 is_processed_by_ai INTEGER DEFAULT 0, -- 0 for False, 1 for True
                 last_ai_processing_at TIMESTAMP,
-                FOREIGN KEY (group_id) REFERENCES Groups(group_id)
+                FOREIGN KEY (group_id) REFERENCES Groups(group_id) ON DELETE CASCADE
             )
         """)
 
@@ -85,7 +85,7 @@ def init_db(db_name: str = "insights.db"):
                 ai_comment_raw_response TEXT,
                 is_processed_by_ai_comment INTEGER DEFAULT 0,
                 last_ai_processing_at_comment TIMESTAMP,
-                FOREIGN KEY (internal_post_id) REFERENCES Posts(internal_post_id)
+                FOREIGN KEY (internal_post_id) REFERENCES Posts(internal_post_id) ON DELETE CASCADE
             )
         """)
 

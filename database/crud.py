@@ -144,13 +144,13 @@ def update_post_with_ai_results(db_conn: sqlite3.Connection, internal_post_id: i
         db_conn.rollback()
 
 
-def get_unprocessed_posts(db_conn: sqlite3.Connection, group_id: int) -> list[dict]:
+def get_unprocessed_posts(db_conn: sqlite3.Connection, group_id: int | None) -> list[dict]:
     """
     Retrieves posts from a specific group that have not yet been processed by AI.
 
     Args:
         db_conn: Database connection
-        group_id: ID of the group to get unprocessed posts from
+        group_id: ID of the group to get unprocessed posts from (if None, get from all groups)
 
     Returns:
         List of dictionaries containing post IDs and content
@@ -238,7 +238,7 @@ def get_distinct_values(db_conn: sqlite3.Connection, field_name: str) -> list[st
 
 def get_all_categorized_posts(
     db_conn: sqlite3.Connection,
-    group_id: int,
+    group_id: int | None,
     filters: dict,
     filter_field: str | None = None,
     filter_value: str | int | None = None,
@@ -249,7 +249,7 @@ def get_all_categorized_posts(
 
     Args:
         db_conn: Database connection object.
-        group_id: ID of the group to get posts from.
+        group_id: ID of the group to get posts from (if None, get from all groups).
         filters: Dictionary of filters. Supported keys:
             category: filter by ai_category.
             start_date: filter by posted_at >= start_date.
