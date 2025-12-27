@@ -1,24 +1,24 @@
 # HTTP & Web Scraping
-requests>=2.32.0,<3.0
-beautifulsoup4>=4.12.0,<5.0
-lxml>=5.3.0,<6.0
+requests>=2.32.5
+beautifulsoup4>=4.14.3
+lxml>=6.0.2
 
 # Browser Automation
-selenium>=4.27.0,<5.0
-webdriver-manager>=4.0.0,<5.0
+selenium>=4.39.0
+webdriver-manager>=4.0.2
 
 # Google Gemini AI
-google-generativeai>=0.8.0,<1.0
+google-generativeai>=0.8.6
 
 # OpenAI-Compatible API (also works with Ollama, LM Studio, OpenRouter, etc.)
-openai>=1.0.0,<2.0
+openai>=2.14.0
 
 # Environment & Configuration
-python-dotenv>=1.0.0,<2.0
+python-dotenv>=1.2.1
 
 # Date/Time Parsing
-python-dateutil>=2.9.0,<3.0
-dateparser>=1.2.0,<2.0
+python-dateutil>=2.9.0.post0
+dateparser>=1.2.2
 
 # Utilities
-tenacity>=9.0.0,<10.0
+tenacity>=9.1.2

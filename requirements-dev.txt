@@ -9,6 +9,8 @@
 # Replaces flake8, black, isort, and more
 ruff>=0.8.0
 
-# Testing (unittest is built-in, no extra deps needed)
-# Add coverage if you want test coverage reports
-# coverage>=7.0.0
+# Testing
+pytest>=8.0.0
+pytest-mock>=3.12.0
+pytest-cov>=4.1.0
+

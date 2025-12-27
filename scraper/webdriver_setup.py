@@ -26,25 +26,50 @@ def init_webdriver(headless: bool = True) -> webdriver.Chrome:
     # Anti-detection measures (applied in all modes)
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument(f"user-agent={USER_AGENT}")
+    options.add_argument("--disable-save-password-bubble")
+    options.add_argument("--disable-infobars")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+
+    # Browser-level preferences to block overlays and speed up loading
+    prefs = {
+        "profile.default_content_setting_values.notifications": 2,
+        "profile.default_content_setting_values.geolocation": 2,
+        "credentials_enable_service": False,
+        "profile.password_manager_enabled": False,
+    }
+
+    # Stability flags for non-headless mode (prevent tab crashes)
+    if not headless:
+        options.add_argument("--disable-features=VizDisplayCompositor")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--no-first-run")
+        options.add_argument("--no-default-browser-check")
 
     if headless:
         # Use new headless mode (Chrome 109+)
         options.add_argument("--headless=new")
+        options.add_argument(
+            "--window-size=1920,1080"
+        )  # Ensure proper viewport for scroll detection
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-extensions")
 
-        # Disable images for faster headless scraping
-        prefs = {"profile.managed_default_content_settings.images": 2}
-        options.add_experimental_option("prefs", prefs)
+        # NOTE: Image blocking removed - it breaks Facebook's infinite scroll
+        # Facebook's lazy-loading relies on intersection observers attached to images.
+        # Blocking images prevents "load more" signals, limiting scraping to ~5 posts.
+
+    options.add_experimental_option("prefs", prefs)
 
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
-        driver.implicitly_wait(10)
+        # OPTIMIZATION: Reduced from 10s to 2s to prevent long waits on failed element finds
+        # The original 10s timeout caused massive delays (10s × failed selectors)
+        driver.implicitly_wait(2)
 
         # Execute CDP command to mask webdriver property
         driver.execute_cdp_cmd(
