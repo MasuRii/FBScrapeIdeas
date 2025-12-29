@@ -9,8 +9,8 @@ webdriver-manager>=4.0.2
 playwright>=1.50.0
 
 
-# Google Gemini AI
-google-generativeai>=0.8.6
+# Google Gemini AI (new SDK - google-genai replaces deprecated google-generativeai)
+google-genai>=1.0.0
 
 # OpenAI-Compatible API (also works with Ollama, LM Studio, OpenRouter, etc.)
 openai>=2.14.0

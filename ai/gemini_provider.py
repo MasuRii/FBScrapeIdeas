@@ -3,16 +3,26 @@ Gemini AI Provider implementation.
 
 This module implements the AIProvider interface for Google's Gemini API,
 supporting configurable model selection and structured JSON output.
+
+Updated for google-genai SDK (v1.0+) - the new official SDK replacing
+the deprecated google-generativeai package.
 """
 
 import json
 import logging
-import re
 import time
+from typing import Any
 
-import google.generativeai as genai
-from google.api_core import exceptions as core_exceptions
-from google.api_core import retry, retry_async
+from google import genai
+from google.genai import types
+from google.genai.errors import ClientError, ServerError
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    wait_random,
+)
 
 from ai.base_provider import AIProvider
 from ai.prompts import get_comment_analysis_prompt, get_post_categorization_prompt
@@ -21,7 +31,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 
 # Default Gemini model
-DEFAULT_GEMINI_MODEL = "models/gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+
+# Retry configuration constants
+RETRY_MAX_ATTEMPTS = 5
+RETRY_MULTIPLIER = 1
+RETRY_MIN_WAIT = 1
+RETRY_MAX_WAIT = 60
+RETRY_JITTER_MAX = 2
 
 
 def list_gemini_models(api_key: str) -> list[str]:
@@ -35,12 +52,12 @@ def list_gemini_models(api_key: str) -> list[str]:
         List of model names.
     """
     try:
-        genai.configure(api_key=api_key)
-        models = genai.list_models()
+        client = genai.Client(api_key=api_key)
+        models = client.models.list()
         return [
             model.name
             for model in models
-            if "generateContent" in model.supported_generation_methods
+            if hasattr(model, "supported_actions") and "generateContent" in model.supported_actions
         ]
     except Exception as e:
         logging.error(f"Error listing Gemini models: {e}")
@@ -53,6 +70,8 @@ class GeminiProvider(AIProvider):
 
     Supports configurable model selection and uses native JSON schema
     for structured output.
+
+    Updated for google-genai SDK v1.0+ with unified Client interface.
     """
 
     def __init__(self, api_key: str, model: str | None = None):
@@ -61,18 +80,18 @@ class GeminiProvider(AIProvider):
 
         Args:
             api_key: Google API key for Gemini.
-            model: Model identifier (default: models/gemini-2.0-flash).
+            model: Model identifier (default: gemini-2.0-flash).
         """
         super().__init__(model)
         self.api_key = api_key
         self._model_name = model or DEFAULT_GEMINI_MODEL
 
-        # Ensure model name has the correct prefix
-        if not self._model_name.startswith("models/"):
-            self._model_name = f"models/{self._model_name}"
+        # New SDK doesn't require "models/" prefix - normalize the model name
+        if self._model_name.startswith("models/"):
+            self._model_name = self._model_name.replace("models/", "", 1)
 
-        genai.configure(api_key=api_key)
-        self._model = genai.GenerativeModel(self._model_name)
+        # Initialize the new unified client
+        self._client = genai.Client(api_key=api_key)
 
         # Load JSON schemas
         self._post_schema = self._load_schema("ai/gemini_schema.json")
@@ -101,6 +120,21 @@ class GeminiProvider(AIProvider):
         """List all available Gemini models."""
         return list_gemini_models(self.api_key)
 
+    def _create_generation_config(self, schema: dict) -> types.GenerateContentConfig:
+        """
+        Create a GenerateContentConfig with JSON schema for structured output.
+
+        Args:
+            schema: The JSON schema dictionary.
+
+        Returns:
+            GenerateContentConfig instance.
+        """
+        return types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+        )
+
     async def analyze_posts_batch(
         self, posts: list[dict], custom_prompt: str | None = None
     ) -> list[dict]:
@@ -121,18 +155,6 @@ class GeminiProvider(AIProvider):
             logging.error("Post schema not loaded. Cannot process posts.")
             return []
 
-        # Build async retry policy
-        async_retry = retry_async.AsyncRetry(
-            predicate=retry_async.if_exception_type(
-                (core_exceptions.ResourceExhausted, core_exceptions.ServiceUnavailable)
-            ),
-            initial=1.0,
-            maximum=60.0,
-            multiplier=2.0,
-            deadline=300,
-            jitter=True,
-        )
-
         # Build prompt
         base_prompt = custom_prompt or get_post_categorization_prompt()
         prompt_parts = [base_prompt, "\n\nPosts:\n"]
@@ -151,24 +173,17 @@ class GeminiProvider(AIProvider):
 
         prompt_text = "".join(prompt_parts)
 
-        generation_config = {
-            "response_mime_type": "application/json",
-            "response_schema": self._post_schema,
-        }
+        # Create generation config with schema
+        config = self._create_generation_config(self._post_schema)
 
         try:
             logging.info(f"Categorizing {len(posts)} posts with Gemini API ({self._model_name})...")
 
-            response = await async_retry(self._model.generate_content_async)(
-                prompt_text, generation_config=generation_config
-            )
+            # Use tenacity retry with async call via client.aio
+            response = await self._async_generate_with_retry(prompt_text, config)
 
             if not response or not response.candidates:
-                block_reason = (
-                    response.prompt_feedback.block_reason
-                    if hasattr(response, "prompt_feedback") and response.prompt_feedback
-                    else "unknown"
-                )
+                block_reason = self._get_block_reason(response)
                 logging.error(f"Gemini API call failed. Block reason: {block_reason}")
                 return []
 
@@ -186,18 +201,82 @@ class GeminiProvider(AIProvider):
 
             return self._map_post_results(categorized_results_list, post_id_map, posts)
 
-        except core_exceptions.ResourceExhausted as e:
-            logging.error(f"API rate limit exceeded: {e}")
-            return []
-        except core_exceptions.ServiceUnavailable as e:
-            logging.error(f"Gemini service unavailable: {e}")
-            return []
-        except core_exceptions.GoogleAPIError as e:
-            logging.error(f"Google API error: {e}")
-            return []
         except Exception as e:
             logging.error(f"Unexpected error: {type(e).__name__}: {e}")
             return []
+
+    async def _async_generate_with_retry(
+        self, prompt: str, config: types.GenerateContentConfig
+    ) -> Any:
+        """
+        Async content generation with tenacity retry logic.
+
+        Args:
+            prompt: The prompt text.
+            config: Generation configuration.
+
+        Returns:
+            The API response.
+        """
+
+        # Define retry decorator for async - retry on server errors and client errors
+        @retry(
+            retry=retry_if_exception_type((ServerError, ClientError)),
+            stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
+            wait=wait_exponential(
+                multiplier=RETRY_MULTIPLIER, min=RETRY_MIN_WAIT, max=RETRY_MAX_WAIT
+            )
+            + wait_random(0, RETRY_JITTER_MAX),
+            reraise=True,
+        )
+        async def _call():
+            return await self._client.aio.models.generate_content(
+                model=self._model_name,
+                contents=prompt,
+                config=config,
+            )
+
+        return await _call()
+
+    def _sync_generate_with_retry(self, prompt: str, config: types.GenerateContentConfig) -> Any:
+        """
+        Sync content generation with tenacity retry logic.
+
+        Args:
+            prompt: The prompt text.
+            config: Generation configuration.
+
+        Returns:
+            The API response.
+        """
+
+        # Define retry decorator for sync - retry on server errors and client errors
+        @retry(
+            retry=retry_if_exception_type((ServerError, ClientError)),
+            stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
+            wait=wait_exponential(
+                multiplier=RETRY_MULTIPLIER, min=RETRY_MIN_WAIT, max=RETRY_MAX_WAIT
+            )
+            + wait_random(0, RETRY_JITTER_MAX),
+            reraise=True,
+        )
+        def _call():
+            return self._client.models.generate_content(
+                model=self._model_name,
+                contents=prompt,
+                config=config,
+            )
+
+        return _call()
+
+    def _get_block_reason(self, response: Any) -> str:
+        """Extract block reason from response if available."""
+        if response is None:
+            return "no response"
+        if hasattr(response, "prompt_feedback") and response.prompt_feedback:
+            if hasattr(response.prompt_feedback, "block_reason"):
+                return str(response.prompt_feedback.block_reason)
+        return "unknown"
 
     def _map_post_results(
         self, ai_results: list[dict], post_id_map: dict, posts: list[dict]
@@ -266,16 +345,6 @@ class GeminiProvider(AIProvider):
             logging.error("Comment schema not loaded. Cannot process comments.")
             return []
 
-        retry_policy = retry.Retry(
-            predicate=retry.if_exception_type(
-                (core_exceptions.ResourceExhausted, core_exceptions.ServiceUnavailable)
-            ),
-            initial=1.0,
-            maximum=60.0,
-            multiplier=2.0,
-            deadline=300,
-        )
-
         # Build prompt
         base_prompt = custom_prompt or get_comment_analysis_prompt()
         prompt_parts = [base_prompt, "\n\nComments:\n"]
@@ -288,26 +357,19 @@ class GeminiProvider(AIProvider):
 
         prompt_text = "".join(prompt_parts)
 
-        generation_config = {
-            "response_mime_type": "application/json",
-            "response_schema": self._comment_schema,
-        }
+        # Create generation config with schema
+        config = self._create_generation_config(self._comment_schema)
 
         try:
             logging.info(
                 f"Analyzing {len(comments)} comments with Gemini API ({self._model_name})..."
             )
 
-            response = retry_policy(self._model.generate_content)(
-                prompt_text, generation_config=generation_config
-            )
+            # Use sync generation with retry
+            response = self._sync_generate_with_retry(prompt_text, config)
 
             if not response or not response.candidates:
-                block_reason = (
-                    response.prompt_feedback.block_reason
-                    if hasattr(response, "prompt_feedback") and response.prompt_feedback
-                    else "unknown"
-                )
+                block_reason = self._get_block_reason(response)
                 logging.error(f"Gemini API call for comments failed. Block reason: {block_reason}")
                 return []
 
@@ -325,15 +387,6 @@ class GeminiProvider(AIProvider):
 
             return self._map_comment_results(analysis_results_list, comment_id_map)
 
-        except core_exceptions.ResourceExhausted as e:
-            logging.error(f"API rate limit exceeded: {e}")
-            return []
-        except core_exceptions.ServiceUnavailable as e:
-            logging.error(f"Gemini service unavailable: {e}")
-            return []
-        except core_exceptions.GoogleAPIError as e:
-            logging.error(f"Google API error during comment analysis: {e}")
-            return []
         except Exception as e:
             logging.error(f"Unexpected error during comment analysis: {type(e).__name__}: {e}")
             return []

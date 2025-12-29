@@ -32,14 +32,7 @@ def get_ai_provider(
         ValueError: If required configuration is missing.
         ImportError: If required provider dependencies are not installed.
     """
-    from config import (
-        get_ai_provider_type,
-        get_gemini_model,
-        get_google_api_key,
-        get_openai_api_key,
-        get_openai_base_url,
-        get_openai_model,
-    )
+    from config import get_ai_provider_type
 
     # Determine provider type
     provider = provider_type or get_ai_provider_type()

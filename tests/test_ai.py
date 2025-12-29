@@ -81,16 +81,15 @@ def mock_openai_response():
 
 
 class TestGeminiProvider:
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
+    @patch("google.genai.Client")
     @patch("ai.gemini_provider.GeminiProvider._load_schema")
     @pytest.mark.asyncio
     async def test_analyze_posts_batch(
-        self, mock_load_schema, mock_configure, mock_model_class, mock_gemini_response
+        self, mock_load_schema, mock_client_class, mock_gemini_response
     ):
         mock_load_schema.return_value = {"type": "object"}
-        mock_model = mock_model_class.return_value
-        mock_model.generate_content_async = AsyncMock(return_value=mock_gemini_response)
+        mock_client = mock_client_class.return_value
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_gemini_response)
 
         provider = GeminiProvider(api_key="test_key")
         results = await provider.analyze_posts_batch(MOCK_POSTS)
@@ -100,12 +99,11 @@ class TestGeminiProvider:
         assert results[0]["internal_post_id"] == 1
         assert "ai_summary" in results[0]
 
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
+    @patch("google.genai.Client")
     @patch("ai.gemini_provider.GeminiProvider._load_schema")
-    def test_analyze_comments_batch(self, mock_load_schema, mock_configure, mock_model_class):
+    def test_analyze_comments_batch(self, mock_load_schema, mock_client_class):
         mock_load_schema.return_value = {"type": "object"}
-        mock_model = mock_model_class.return_value
+        mock_client = mock_client_class.return_value
 
         mock_response = MagicMock()
         mock_response.text = json.dumps(
@@ -119,7 +117,7 @@ class TestGeminiProvider:
             ]
         )
         mock_response.candidates = [MagicMock()]
-        mock_model.generate_content.return_value = mock_response
+        mock_client.models.generate_content.return_value = mock_response
 
         provider = GeminiProvider(api_key="test_key")
         results = provider.analyze_comments_batch(MOCK_COMMENTS[:1])
@@ -128,33 +126,152 @@ class TestGeminiProvider:
         assert results[0]["ai_comment_category"] == "Spam"
         assert results[0]["comment_id"] == 101
 
-    @patch("google.generativeai.list_models")
-    @patch("google.generativeai.configure")
-    def test_list_available_models(self, mock_configure, mock_list_models):
+    @patch("google.genai.Client")
+    def test_list_available_models(self, mock_client_class):
+        mock_client = mock_client_class.return_value
+
         mock_model1 = MagicMock()
         mock_model1.name = "models/gemini-pro"
-        mock_model1.supported_generation_methods = ["generateContent"]
+        mock_model1.supported_actions = ["generateContent"]
         mock_model2 = MagicMock()
         mock_model2.name = "models/embedding"
-        mock_model2.supported_generation_methods = ["embedContent"]
+        mock_model2.supported_actions = ["embedContent"]
 
-        mock_list_models.return_value = [mock_model1, mock_model2]
+        mock_client.models.list.return_value = [mock_model1, mock_model2]
 
         from ai.gemini_provider import list_gemini_models
 
         models = list_gemini_models("test_key")
         assert models == ["models/gemini-pro"]
 
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
+    @patch("google.genai.Client")
     @patch("ai.gemini_provider.GeminiProvider._load_schema")
     @pytest.mark.asyncio
-    async def test_analyze_posts_batch_empty(
-        self, mock_load_schema, mock_configure, mock_model_class
-    ):
+    async def test_analyze_posts_batch_empty(self, mock_load_schema, mock_client_class):
         mock_load_schema.return_value = {"type": "object"}
         provider = GeminiProvider(api_key="test_key")
         results = await provider.analyze_posts_batch([])
+        assert results == []
+
+    @patch("google.genai.Client")
+    @patch("ai.gemini_provider.GeminiProvider._load_schema")
+    @pytest.mark.asyncio
+    async def test_analyze_posts_batch_api_blocked(self, mock_load_schema, mock_client_class):
+        """Test handling when API response is blocked (no candidates)."""
+        mock_load_schema.return_value = {"type": "object"}
+        mock_client = mock_client_class.return_value
+
+        # Simulate blocked response with no candidates
+        mock_response = MagicMock()
+        mock_response.candidates = []
+        mock_response.prompt_feedback = MagicMock()
+        mock_response.prompt_feedback.block_reason = "SAFETY"
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        provider = GeminiProvider(api_key="test_key")
+        results = await provider.analyze_posts_batch(MOCK_POSTS)
+
+        assert results == []
+
+    @patch("google.genai.Client")
+    @patch("ai.gemini_provider.GeminiProvider._load_schema")
+    @pytest.mark.asyncio
+    async def test_analyze_posts_batch_json_decode_error(self, mock_load_schema, mock_client_class):
+        """Test handling when API returns malformed JSON."""
+        mock_load_schema.return_value = {"type": "object"}
+        mock_client = mock_client_class.return_value
+
+        mock_response = MagicMock()
+        mock_response.text = "This is not valid JSON {"
+        mock_response.candidates = [MagicMock()]
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        provider = GeminiProvider(api_key="test_key")
+        results = await provider.analyze_posts_batch(MOCK_POSTS)
+
+        assert results == []
+
+    @patch("google.genai.Client")
+    @patch("ai.gemini_provider.GeminiProvider._load_schema")
+    @pytest.mark.asyncio
+    async def test_analyze_posts_batch_non_list_response(self, mock_load_schema, mock_client_class):
+        """Test handling when API returns valid JSON but not a list."""
+        mock_load_schema.return_value = {"type": "object"}
+        mock_client = mock_client_class.return_value
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"error": "unexpected format"})
+        mock_response.candidates = [MagicMock()]
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        provider = GeminiProvider(api_key="test_key")
+        results = await provider.analyze_posts_batch(MOCK_POSTS)
+
+        assert results == []
+
+    @patch("google.genai.Client")
+    def test_model_name_normalization(self, mock_client_class):
+        """Test that models/ prefix is stripped from model name."""
+        with patch("ai.gemini_provider.GeminiProvider._load_schema", return_value={}):
+            provider = GeminiProvider(api_key="test_key", model="models/gemini-pro")
+            assert provider.get_model_name() == "gemini-pro"
+            assert provider.provider_name == "gemini"
+
+    @patch("google.genai.Client")
+    def test_provider_name_and_model(self, mock_client_class):
+        """Test provider_name property and get_model_name method."""
+        with patch("ai.gemini_provider.GeminiProvider._load_schema", return_value={}):
+            provider = GeminiProvider(api_key="test_key", model="gemini-2.0-flash")
+            assert provider.provider_name == "gemini"
+            assert provider.get_model_name() == "gemini-2.0-flash"
+
+    @patch("google.genai.Client")
+    def test_get_block_reason(self, mock_client_class):
+        """Test _get_block_reason helper method."""
+        with patch("ai.gemini_provider.GeminiProvider._load_schema", return_value={}):
+            provider = GeminiProvider(api_key="test_key")
+
+            # Test None response
+            assert provider._get_block_reason(None) == "no response"
+
+            # Test response with block_reason
+            mock_response = MagicMock()
+            mock_response.prompt_feedback = MagicMock()
+            mock_response.prompt_feedback.block_reason = "SAFETY"
+            assert provider._get_block_reason(mock_response) == "SAFETY"
+
+            # Test response without prompt_feedback
+            mock_response2 = MagicMock()
+            mock_response2.prompt_feedback = None
+            assert provider._get_block_reason(mock_response2) == "unknown"
+
+    @patch("google.genai.Client")
+    @patch("ai.gemini_provider.GeminiProvider._load_schema")
+    def test_analyze_comments_batch_empty(self, mock_load_schema, mock_client_class):
+        """Test that empty comment list returns empty results."""
+        mock_load_schema.return_value = {"type": "object"}
+        provider = GeminiProvider(api_key="test_key")
+        results = provider.analyze_comments_batch([])
+        assert results == []
+
+    @patch("google.genai.Client")
+    @patch("ai.gemini_provider.GeminiProvider._load_schema")
+    def test_analyze_comments_batch_schema_missing(self, mock_load_schema, mock_client_class):
+        """Test handling when comment schema fails to load."""
+        # Return valid post schema but None for comment schema
+        mock_load_schema.side_effect = [{"type": "object"}, None]
+        provider = GeminiProvider(api_key="test_key")
+        results = provider.analyze_comments_batch(MOCK_COMMENTS)
+        assert results == []
+
+    @patch("google.genai.Client")
+    @patch("ai.gemini_provider.GeminiProvider._load_schema")
+    @pytest.mark.asyncio
+    async def test_analyze_posts_batch_schema_missing(self, mock_load_schema, mock_client_class):
+        """Test handling when post schema fails to load."""
+        mock_load_schema.side_effect = [None, {"type": "object"}]
+        provider = GeminiProvider(api_key="test_key")
+        results = await provider.analyze_posts_batch(MOCK_POSTS)
         assert results == []
 
 
@@ -243,13 +360,12 @@ def test_provider_factory():
         patch("config.get_google_api_key", return_value="test_key"),
         patch("config.get_gemini_model", return_value="gemini-test"),
         patch("config.get_ai_provider_type", return_value="gemini"),
-        patch("google.generativeai.configure"),
-        patch("google.generativeai.GenerativeModel"),
+        patch("google.genai.Client"),
         patch("ai.gemini_provider.GeminiProvider._load_schema", return_value={}),
     ):
         provider = get_ai_provider("gemini")
         assert provider.provider_name == "gemini"
-        assert provider.get_model_name() == "models/gemini-test"
+        assert provider.get_model_name() == "gemini-test"
 
 
 def test_create_post_batches():

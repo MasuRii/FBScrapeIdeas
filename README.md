@@ -37,6 +37,7 @@ This tool helps users identify potential capstone/thesis ideas, student problems
 *   **🕷️ Playwright Engine:** Now supports **Playwright** for faster, more resilient, and undetectable scraping (alongside Selenium).
 *   **🍪 Session Management:** Intelligent session handling with `storage_state.json` remembers your login, reducing suspicious activity flags and CAPTCHAs.
 *   **⚡ AI Filtering Pipeline 2.0:** A smart 2-stage pipeline that pre-filters posts using local keywords *before* sending them to the AI, significantly reducing API costs and latency.
+*   **🔄 Gemini SDK 2025:** Migrated to the new official `google-genai` SDK for improved reliability and structured output support.
 
 ### Core Capabilities
 *   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts and comments from private or public groups.
@@ -93,7 +94,7 @@ The application collects the following data from Facebook group posts and commen
     *   `Selenium` (Legacy support)
     *   `BeautifulSoup4`
 *   **AI & Machine Learning:**
-    *   `google-generativeai`
+    *   `google-genai`
     *   `openai`
 *   **Database:**
     *   `SQLite`

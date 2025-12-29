@@ -105,9 +105,17 @@ class FilteringPipeline:
             except Exception as e:
                 logging.error(f"AI Batch Analysis failed: {e}")
                 # Mark as error but don't stop pipeline
+                # Sanitize error message to avoid exposing internal details
+                error_type = type(e).__name__
+                sanitized_error = f"{error_type}: AI processing failed"
                 for post in to_analyze:
                     results.append(
-                        {**post, "ai_status": "error", "ai_error": str(e), "is_processed_by_ai": 0}
+                        {
+                            **post,
+                            "ai_status": "error",
+                            "ai_error": sanitized_error,
+                            "is_processed_by_ai": 0,
+                        }
                     )
 
         return results
