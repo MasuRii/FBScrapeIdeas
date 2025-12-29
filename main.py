@@ -30,7 +30,6 @@ from database.crud import (
     update_comment_with_ai_results,
     update_post_with_ai_results,
 )
-from database.db_setup import init_db
 from database.stats_queries import get_all_statistics
 
 # Configure logging
@@ -708,6 +707,67 @@ def handle_setup_command():
     run_setup_wizard()
 
 
+async def handle_health_check():
+    """Performs a diagnostic check of the system's core components."""
+    logging.info("Running system health check...")
+    results = {"database": "UNKNOWN", "ai_provider": "UNKNOWN", "scraper_engine": "UNKNOWN"}
+
+    # 1. Database Check
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            results["database"] = "OK"
+            conn.close()
+        else:
+            results["database"] = "FAIL (No connection)"
+    except Exception as e:
+        results["database"] = f"FAIL ({str(e)})"
+
+    # 2. AI Provider Check
+    try:
+        from ai.provider_factory import get_ai_provider
+
+        provider = get_ai_provider()
+        results["ai_provider"] = f"OK ({provider.provider_name})"
+    except Exception as e:
+        results["ai_provider"] = f"FAIL ({str(e)})"
+
+    # 3. Scraper Engine Check
+    try:
+        engine = get_scraper_engine()
+        if engine == "playwright":
+            import playwright.async_api
+
+            async with playwright.async_api.async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                await browser.close()
+            results["scraper_engine"] = "OK (Playwright/Chromium)"
+        else:
+            from scraper.webdriver_setup import init_webdriver
+
+            driver = init_webdriver(headless=True)
+            driver.quit()
+            results["scraper_engine"] = "OK (Selenium/Chrome)"
+    except Exception as e:
+        results["scraper_engine"] = f"FAIL ({str(e)})"
+
+    print("\n" + "=" * 30)
+    print("      HEALTH CHECK REPORT")
+    print("=" * 30)
+    for component, status in results.items():
+        print(f"{component.replace('_', ' ').title():<15}: {status}")
+    print("=" * 30)
+
+    if all("OK" in str(s) for s in results.values()):
+        print("\n✅ System is healthy.")
+        sys.exit(0)
+    else:
+        print("\n❌ System health issues detected.")
+        sys.exit(1)
+
+
 def main():
     """Main entry point for the FB Scrape Ideas CLI application."""
     from cli.menu_handler import run_cli
@@ -723,8 +783,6 @@ def main():
         check_first_run()
 
     try:
-        init_db()
-
         conn = get_db_connection()
         if conn is None:
             logging.error("Failed to connect to database after initialization")
@@ -758,6 +816,7 @@ def main():
         "list_groups": handle_list_groups_command,
         "remove_group": handle_remove_group_command,
         "stats": handle_stats_command,
+        "health": handle_health_check,
     }
 
     run_cli(command_handlers)

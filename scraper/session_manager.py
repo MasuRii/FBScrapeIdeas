@@ -1,9 +1,11 @@
 import asyncio
+import json
 import os
 import logging
 from playwright.async_api import async_playwright, BrowserContext, Playwright
 from tenacity import retry, stop_after_attempt, wait_exponential
 from config import SESSION_STATE_PATH
+from credential_manager import CredentialManager, set_secure_permissions
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +32,26 @@ class SessionManager:
         browser = await playwright.chromium.launch(headless=headless)
 
         if os.path.exists(self.state_path):
-            logger.info(f"Attempting to load session from {self.state_path}")
-            context = await browser.new_context(storage_state=self.state_path)
+            logger.info(f"Attempting to load session from {os.path.basename(self.state_path)}")
+            try:
+                with open(self.state_path, "r", encoding="utf-8") as f:
+                    content = f.read()
 
-            if await self.validate_session(context):
-                logger.info("Session is valid.")
-                return context
-            else:
-                logger.warning("Session is invalid or expired. Triggering manual login.")
-                await context.close()
+                # Decrypt the content. Handles backward compatibility for plain-text JSON.
+                decrypted_content = CredentialManager.decrypt(content)
+                state_dict = json.loads(decrypted_content)
+
+                context = await browser.new_context(storage_state=state_dict)
+
+                if await self.validate_session(context):
+                    logger.info("Session is valid.")
+                    return context
+                else:
+                    logger.warning("Session is invalid or expired. Triggering manual login.")
+                    await context.close()
+                    await browser.close()
+            except Exception as e:
+                logger.error(f"Failed to load/decrypt session state: {e}")
                 await browser.close()
         else:
             logger.info("No session state found. Triggering manual login.")
@@ -92,8 +105,18 @@ class SessionManager:
             os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
 
             # Save storage state (cookies + local storage)
-            await context.storage_state(path=self.state_path)
-            logger.info(f"Session saved successfully to {self.state_path}")
+            state_dict = await context.storage_state()
+            encrypted_state = CredentialManager.encrypt(json.dumps(state_dict))
+
+            with open(self.state_path, "w", encoding="utf-8") as f:
+                f.write(encrypted_state)
+
+            # Set secure permissions
+            set_secure_permissions(self.state_path)
+
+            logger.info(
+                f"Session saved successfully (encrypted) to {os.path.basename(self.state_path)}"
+            )
 
             print("\n  [SUCCESS] Session saved! Continuing...\n")
             return context

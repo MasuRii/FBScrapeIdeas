@@ -1014,6 +1014,8 @@ def create_arg_parser():
 
     subparsers.add_parser("setup", help="Run the setup wizard to configure credentials.")
 
+    subparsers.add_parser("health", help="Verify the environment and dependencies.")
+
     return parser
 
 
@@ -1149,7 +1151,7 @@ def run_interactive_menu(command_handlers):
                 start_date = get_validated_input(
                     "Start date (YYYY-MM-DD, optional): ",
                     validate_date_format,
-                    "Invalid date format. Please use YYYY-MM-DD (e.g., 2024-01-15)",
+                    "Invalid date format. Please use YYYY-MM-DD (e.g., 2025-01-15)",
                 )
                 if start_date:
                     filters["start_date"] = start_date
@@ -1157,7 +1159,7 @@ def run_interactive_menu(command_handlers):
                 end_date = get_validated_input(
                     "End date (YYYY-MM-DD, optional): ",
                     validate_date_format,
-                    "Invalid date format. Please use YYYY-MM-DD (e.g., 2024-01-15)",
+                    "Invalid date format. Please use YYYY-MM-DD (e.g., 2025-01-15)",
                 )
                 if end_date:
                     filters["end_date"] = end_date
@@ -1363,6 +1365,8 @@ def handle_cli_arguments(args, command_handlers):
                 from config import run_setup_wizard
 
                 run_setup_wizard()
+            elif args.command == "health":
+                asyncio.run(command_handlers["health"]())
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:

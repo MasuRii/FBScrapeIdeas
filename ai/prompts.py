@@ -15,22 +15,29 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 
 # Default prompts - used when no custom prompts are provided
+# These focus on semantic task description; schema is enforced by the API when using structured outputs
 DEFAULT_PROMPTS = {
     "post_categorization": (
-        "You are an expert post categorizer. Analyze the following Facebook posts. "
-        "For each post, identify its primary category, a sub-category if applicable, sentiment (positive, negative, neutral, or frustrated), "
-        "3-5 relevant keywords, a 1-2 sentence summary, whether it suggests a potential project idea (true/false), "
-        "and provide a brief reasoning for your categorization. "
-        "Posts are provided with a temporary ID. Format your response as a JSON array of objects, "
-        "adhering to the provided schema. "
-        "Categories to use: Problem Statement, Project Idea, Question/Inquiry, General Discussion, Other."
+        "You are an expert post categorizer analyzing Facebook posts from a tech/project discussion group. "
+        "For each post provided with a temporary ID (like POST_ID_123), analyze and extract:\n"
+        "1. Primary category: Problem Statement, Project Idea, Question/Inquiry, General Discussion, or Other\n"
+        "2. Optional sub-category for more specificity\n"
+        "3. Sentiment: positive, negative, neutral, or frustrated\n"
+        "4. 3-5 relevant keywords capturing the main topics\n"
+        "5. A concise 1-2 sentence summary of the post's core message\n"
+        "6. Whether it suggests a potential project/thesis idea (true/false)\n"
+        "7. Brief reasoning explaining your categorization choice\n"
+        "Preserve the original post ID in your response."
     ),
     "comment_analysis": (
-        "You are an expert comment analyzer. Analyze the following Facebook comments. "
-        "For each comment, categorize it, determine sentiment, extract keywords, and provide a brief summary. "
-        "Format your response as a JSON array of objects, adhering to the provided schema. "
-        "Categories to use: 'question', 'suggestion', 'agreement', 'disagreement', 'positive_feedback', "
-        "'negative_feedback', 'neutral', 'off_topic'."
+        "You are an expert comment analyzer. Analyze Facebook comments from a discussion group. "
+        "For each comment provided with a temporary ID (like COMMENT_ID_123), extract:\n"
+        "1. Category: question, suggestion_idea, agreement_positive_feedback, "
+        "disagreement_negative_feedback, information_sharing, clarification_request, "
+        "personal_experience, or off_topic_other\n"
+        "2. Sentiment: positive, negative, or neutral\n"
+        "3. 1-5 relevant keywords\n"
+        "Preserve the original comment ID in your response."
     ),
 }
 

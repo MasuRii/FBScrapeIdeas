@@ -144,7 +144,7 @@ class TestGeminiSDKIntegration:
 
         provider = GeminiProvider(api_key=self.api_key)
 
-        assert provider.provider_name == "Gemini"
+        assert provider.provider_name == "gemini"
         assert provider.get_model_name() is not None
         assert provider._post_schema is not None, "Post schema should be loaded"
         assert provider._comment_schema is not None, "Comment schema should be loaded"

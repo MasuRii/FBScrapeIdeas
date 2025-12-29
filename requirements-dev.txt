@@ -1,7 +1,11 @@
 # ============================================
 # Development Dependencies
 # ============================================
-# Install with: pip install -r requirements-dev.txt
+# For deterministic builds and CI/CD, use: requirements-dev.lock
+# Install with: pip install -r requirements-dev.lock
+# ============================================
+# For deterministic builds and CI/CD, use: requirements-dev.lock
+# Install with: pip install -r requirements-dev.lock
 # ============================================
 
 # Linting & Formatting

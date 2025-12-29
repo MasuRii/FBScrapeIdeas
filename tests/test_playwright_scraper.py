@@ -3,6 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from scraper.playwright_scraper import PlaywrightScraper
 
 
+from scraper.utils import derive_post_id
+
+
 class TestPlaywrightScraper(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # We don't want __init__ to actually call ensure_playwright_installed or SessionManager
@@ -14,15 +17,15 @@ class TestPlaywrightScraper(unittest.IsolatedAsyncioTestCase):
 
     def test_derive_post_id_numeric(self):
         url = "https://www.facebook.com/groups/123/posts/456789/"
-        self.assertEqual(self.scraper._derive_post_id(url), "456789")
+        self.assertEqual(derive_post_id(url), "456789")
 
     def test_derive_post_id_permalink(self):
         url = "https://www.facebook.com/groups/123/permalink/987654321/"
-        self.assertEqual(self.scraper._derive_post_id(url), "987654321")
+        self.assertEqual(derive_post_id(url), "987654321")
 
     def test_derive_post_id_query_param(self):
         url = "https://www.facebook.com/story.php?story_fbid=112233&id=445566"
-        self.assertEqual(self.scraper._derive_post_id(url), "112233")
+        self.assertEqual(derive_post_id(url), "112233")
 
     async def test_extract_post_data_success(self):
         mock_element = AsyncMock()

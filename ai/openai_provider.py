@@ -3,12 +3,15 @@ OpenAI-Compatible AI Provider implementation.
 
 This module implements the AIProvider interface for OpenAI-compatible APIs,
 supporting custom base URLs for providers like Ollama, LM Studio, OpenRouter, etc.
+
+Updated for modern Structured Outputs (2025) with json_schema strict mode.
 """
 
 import json
 import logging
 import re
 import time
+from typing import Any
 
 from openai import APIConnectionError, APIError, OpenAI, RateLimitError
 
@@ -21,6 +24,115 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # Default OpenAI settings
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+
+# JSON Schemas for Structured Outputs (strict mode)
+# All fields must be in 'required' and additionalProperties must be False
+POST_ANALYSIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "posts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "postId": {
+                        "type": "string",
+                        "description": "The temporary ID of the post (e.g., POST_ID_123)",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Primary category: Problem Statement, Project Idea, Question/Inquiry, General Discussion, or Other",
+                    },
+                    "subCategory": {
+                        "type": ["string", "null"],
+                        "description": "A more specific sub-category, if applicable",
+                    },
+                    "sentiment": {
+                        "type": "string",
+                        "enum": ["positive", "negative", "neutral", "frustrated"],
+                        "description": "The emotional tone of the post",
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of 3-5 keywords from the post",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "A brief 1-2 sentence summary of the post",
+                    },
+                    "isPotentialIdea": {
+                        "type": "boolean",
+                        "description": "True if the post suggests a project/thesis idea",
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Brief justification for the assigned category",
+                    },
+                },
+                "required": [
+                    "postId",
+                    "category",
+                    "subCategory",
+                    "sentiment",
+                    "keywords",
+                    "summary",
+                    "isPotentialIdea",
+                    "reasoning",
+                ],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["posts"],
+    "additionalProperties": False,
+}
+
+COMMENT_ANALYSIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "comments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "comment_id": {
+                        "type": "string",
+                        "description": "The unique identifier for the comment (e.g., COMMENT_ID_123)",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "question",
+                            "suggestion_idea",
+                            "agreement_positive_feedback",
+                            "disagreement_negative_feedback",
+                            "information_sharing",
+                            "clarification_request",
+                            "personal_experience",
+                            "off_topic_other",
+                        ],
+                        "description": "The classified category of the comment",
+                    },
+                    "sentiment": {
+                        "type": "string",
+                        "enum": ["positive", "negative", "neutral"],
+                        "description": "The sentiment of the comment",
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "A list of 1-5 keywords from the comment",
+                    },
+                },
+                "required": ["comment_id", "category", "sentiment", "keywords"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["comments"],
+    "additionalProperties": False,
+}
 
 
 def list_openai_models(base_url: str, api_key: str) -> list[str]:
@@ -53,9 +165,18 @@ class OpenAIProvider(AIProvider):
     - LM Studio: http://localhost:1234/v1
     - OpenRouter: https://openrouter.ai/api/v1
     - etc.
+
+    Uses modern Structured Outputs (json_schema with strict: true) for OpenAI,
+    with automatic fallback to json_object for non-supporting providers.
     """
 
-    def __init__(self, api_key: str, base_url: str | None = None, model: str | None = None):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str | None = None,
+        model: str | None = None,
+        use_strict_schema: bool | None = None,
+    ):
         """
         Initialize the OpenAI-compatible provider.
 
@@ -63,11 +184,20 @@ class OpenAIProvider(AIProvider):
             api_key: API key for authentication.
             base_url: Base URL for the API (default: OpenAI).
             model: Model identifier (default: gpt-4o-mini).
+            use_strict_schema: Whether to use strict json_schema mode.
+                              Defaults to True for OpenAI API, False for others.
         """
         super().__init__(model)
         self.api_key = api_key
         self.base_url = base_url or DEFAULT_OPENAI_BASE_URL
         self._model_name = model or DEFAULT_OPENAI_MODEL
+
+        # Auto-detect if we should use strict schema mode
+        # Enable by default for official OpenAI API, disable for others
+        if use_strict_schema is None:
+            self._use_strict_schema = "api.openai.com" in self.base_url
+        else:
+            self._use_strict_schema = use_strict_schema
 
         self.client = OpenAI(base_url=self.base_url, api_key=api_key)
 
@@ -81,6 +211,27 @@ class OpenAIProvider(AIProvider):
     def list_available_models(self) -> list[str]:
         """List all available models from the endpoint."""
         return list_openai_models(self.base_url, self.api_key)
+
+    def _get_response_format(self, schema: dict, schema_name: str) -> dict:
+        """
+        Get the appropriate response_format based on provider capabilities.
+
+        Args:
+            schema: The JSON schema dict for structured output.
+            schema_name: A name for the schema (e.g., 'post_analysis').
+
+        Returns:
+            The response_format dict for the API call.
+        """
+        if self._use_strict_schema:
+            # Use modern Structured Outputs (strict mode)
+            return {
+                "type": "json_schema",
+                "json_schema": {"name": schema_name, "strict": True, "schema": schema},
+            }
+        else:
+            # Fallback for non-OpenAI providers
+            return {"type": "json_object"}
 
     def _extract_json_from_response(self, content: str) -> list[dict] | None:
         """
@@ -143,8 +294,11 @@ class OpenAIProvider(AIProvider):
         if not posts:
             return []
 
-        # Build system prompt with schema
-        system_prompt = custom_prompt or get_post_categorization_prompt(include_schema=True)
+        # Build system prompt
+        # Only include schema text if NOT using strict json_schema mode (for fallback providers)
+        system_prompt = custom_prompt or get_post_categorization_prompt(
+            include_schema=not self._use_strict_schema
+        )
 
         # Build user prompt with posts
         user_prompt_parts = ["Posts:\n"]
@@ -161,10 +315,15 @@ class OpenAIProvider(AIProvider):
 
         user_prompt = "".join(user_prompt_parts)
 
+        # Get the appropriate response format
+        response_format = self._get_response_format(POST_ANALYSIS_SCHEMA, "post_analysis")
+
         try:
             logging.info(
                 f"Categorizing {len(posts)} posts with OpenAI-compatible API ({self._model_name})..."
             )
+            if self._use_strict_schema:
+                logging.debug("Using strict json_schema mode for structured output")
 
             response = self.client.chat.completions.create(
                 model=self._model_name,
@@ -172,7 +331,7 @@ class OpenAIProvider(AIProvider):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                response_format={"type": "json_object"},
+                response_format=response_format,
                 temperature=0.3,
             )
 
@@ -183,11 +342,15 @@ class OpenAIProvider(AIProvider):
             content = response.choices[0].message.content
             logging.debug(f"Raw response: {content[:500] if content else 'None'}...")
 
-            # Handle response that might be wrapped in an object
+            # Parse the response
             try:
                 parsed = json.loads(content)
-                if isinstance(parsed, dict):
-                    # Check for common wrapper keys
+
+                if self._use_strict_schema:
+                    # With strict schema, response is guaranteed to have 'posts' key
+                    categorized_results_list = parsed.get("posts", [])
+                elif isinstance(parsed, dict):
+                    # Fallback mode: check for common wrapper keys
                     for key in ["posts", "results", "data", "items"]:
                         if key in parsed and isinstance(parsed[key], list):
                             categorized_results_list = parsed[key]
@@ -210,9 +373,12 @@ class OpenAIProvider(AIProvider):
                     return []
             except json.JSONDecodeError as e:
                 logging.error(f"JSONDecodeError: {e}. Content: {content[:500]}")
-                # Try extraction as fallback
-                categorized_results_list = self._extract_json_from_response(content)
-                if not categorized_results_list:
+                # Try extraction as fallback (only for non-strict mode)
+                if not self._use_strict_schema:
+                    categorized_results_list = self._extract_json_from_response(content)
+                    if not categorized_results_list:
+                        return []
+                else:
                     return []
 
             return self._map_post_results(categorized_results_list, post_id_map, posts)
@@ -294,8 +460,11 @@ class OpenAIProvider(AIProvider):
         if not comments:
             return []
 
-        # Build system prompt with schema
-        system_prompt = custom_prompt or get_comment_analysis_prompt(include_schema=True)
+        # Build system prompt
+        # Only include schema text if NOT using strict json_schema mode
+        system_prompt = custom_prompt or get_comment_analysis_prompt(
+            include_schema=not self._use_strict_schema
+        )
 
         # Build user prompt with comments
         user_prompt_parts = ["Comments:\n"]
@@ -308,10 +477,15 @@ class OpenAIProvider(AIProvider):
 
         user_prompt = "".join(user_prompt_parts)
 
+        # Get the appropriate response format
+        response_format = self._get_response_format(COMMENT_ANALYSIS_SCHEMA, "comment_analysis")
+
         try:
             logging.info(
                 f"Analyzing {len(comments)} comments with OpenAI-compatible API ({self._model_name})..."
             )
+            if self._use_strict_schema:
+                logging.debug("Using strict json_schema mode for comment analysis")
 
             response = self.client.chat.completions.create(
                 model=self._model_name,
@@ -319,7 +493,7 @@ class OpenAIProvider(AIProvider):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                response_format={"type": "json_object"},
+                response_format=response_format,
                 temperature=0.3,
             )
 
@@ -329,11 +503,15 @@ class OpenAIProvider(AIProvider):
 
             content = response.choices[0].message.content
 
-            # Handle response that might be wrapped in an object
+            # Parse the response
             try:
                 parsed = json.loads(content)
-                if isinstance(parsed, dict):
-                    # Check for common wrapper keys
+
+                if self._use_strict_schema:
+                    # With strict schema, response is guaranteed to have 'comments' key
+                    analysis_results_list = parsed.get("comments", [])
+                elif isinstance(parsed, dict):
+                    # Fallback mode: check for common wrapper keys
                     for key in ["comments", "results", "data", "items"]:
                         if key in parsed and isinstance(parsed[key], list):
                             analysis_results_list = parsed[key]
@@ -353,8 +531,11 @@ class OpenAIProvider(AIProvider):
                     return []
             except json.JSONDecodeError as e:
                 logging.error(f"JSONDecodeError parsing comment response: {e}")
-                analysis_results_list = self._extract_json_from_response(content)
-                if not analysis_results_list:
+                if not self._use_strict_schema:
+                    analysis_results_list = self._extract_json_from_response(content)
+                    if not analysis_results_list:
+                        return []
+                else:
                     return []
 
             return self._map_comment_results(analysis_results_list, comment_id_map)

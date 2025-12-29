@@ -18,11 +18,11 @@ def test_validate_facebook_url():
 
 
 def test_validate_date_format():
-    assert validate_date_format("2024-01-01") is True
+    assert validate_date_format("2025-01-01") is True
     assert validate_date_format("2025-12-31") is True
-    assert validate_date_format("2024-13-01") is False
-    assert validate_date_format("01-01-2024") is False
-    assert validate_date_format("2024/01/01") is False
+    assert validate_date_format("2025-13-01") is False
+    assert validate_date_format("01-01-2025") is False
+    assert validate_date_format("2025/01/01") is False
     assert validate_date_format("") is True  # Optional field
 
 

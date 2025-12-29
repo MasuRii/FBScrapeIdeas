@@ -3,6 +3,7 @@ import logging
 import sqlite3
 import time
 from typing import Union
+from config import get_db_path as config_get_db_path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -12,22 +13,20 @@ ALLOWED_FILTER_FIELDS = {"ai_category", "post_author_name", "ai_is_potential_ide
 def _get_db_path(db_name: str = "insights.db") -> str:
     """
     Get the database path using the centralized config function.
-    Falls back to local db_name if config is not available.
     """
-    try:
-        from config import get_db_path as config_get_db_path
-
-        return config_get_db_path(db_name)
-    except ImportError:
-        # Fallback if config module not available
-        return db_name
+    return config_get_db_path(db_name)
 
 
 def get_db_connection(db_name="insights.db"):
     """
     Creates and returns a connection to the SQLite database.
-    Uses the platform-appropriate data directory via config.
+    Automatically initializes the database if tables are missing.
     """
+    from database.db_setup import init_db
+
+    # Ensure database is initialized before connection
+    init_db(db_name)
+
     db_path = _get_db_path(db_name)
 
     try:
@@ -611,9 +610,6 @@ def remove_group(db_conn: sqlite3.Connection, group_id: int) -> bool:
 
 
 if __name__ == "__main__":
-    from db_setup import init_db
-
-    init_db()
     conn = get_db_connection()
     if conn:
         conn.execute(

@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+from config import get_db_path as config_get_db_path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -7,15 +8,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 def get_db_path(db_name: str = "insights.db") -> str:
     """
     Get the database path using the centralized config function.
-    Falls back to local db_name if config is not available.
     """
-    try:
-        from config import get_db_path as config_get_db_path
-
-        return config_get_db_path(db_name)
-    except ImportError:
-        # Fallback if config module not available
-        return db_name
+    return config_get_db_path(db_name)
 
 
 def init_db(db_name: str = "insights.db"):

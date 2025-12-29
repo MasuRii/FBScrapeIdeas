@@ -1,3 +1,15 @@
+# ============================================
+# FB Scrape Ideas - Abstract Dependencies
+# ============================================
+# This file defines the top-level dependencies.
+# For deterministic builds and CI/CD, use: requirements.lock
+# ============================================
+# ============================================
+# FB Scrape Ideas - Abstract Dependencies
+# ============================================
+# This file defines the top-level dependencies.
+# For deterministic builds and CI/CD, use: requirements.lock
+# ============================================
 # HTTP & Web Scraping
 requests>=2.32.5
 beautifulsoup4>=4.14.3
@@ -17,6 +29,8 @@ openai>=2.14.0
 
 # Environment & Configuration
 python-dotenv>=1.2.1
+cryptography>=44.0.0
+
 
 # Date/Time Parsing
 python-dateutil>=2.9.0.post0

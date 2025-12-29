@@ -35,9 +35,17 @@ This tool helps users identify potential capstone/thesis ideas, student problems
 
 ### 🆕 What's New in 2025
 *   **🕷️ Playwright Engine:** Now supports **Playwright** for faster, more resilient, and undetectable scraping (alongside Selenium).
+*   **🧠 Self-Healing Selectors:** The scraper adaptively learns new DOM patterns when Facebook updates its layout, saving working selectors to `learned_selectors.json` for future runs.
 *   **🍪 Session Management:** Intelligent session handling with `storage_state.json` remembers your login, reducing suspicious activity flags and CAPTCHAs.
 *   **⚡ AI Filtering Pipeline 2.0:** A smart 2-stage pipeline that pre-filters posts using local keywords *before* sending them to the AI, significantly reducing API costs and latency.
 *   **🔄 Gemini SDK 2025:** Migrated to the new official `google-genai` SDK for improved reliability and structured output support.
+
+### 🛡️ Resilience Architecture
+The 2025 engine features a **Self-Healing Selector Registry** that makes the scraper virtually unbreakable:
+1.  **Detection:** Automatically detects when standard CSS selectors fail due to Facebook updates.
+2.  **Analysis:** Scans the page DOM for semantic invariants (e.g., "article" roles, timestamp patterns).
+3.  **Learning:** Updates its internal registry with the new working patterns.
+4.  **Persistence:** Saves learned selectors to `learned_selectors.json`, so it gets smarter over time.
 
 ### Core Capabilities
 *   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts and comments from private or public groups.

@@ -1,10 +1,18 @@
-import getpass
 import logging
 import os
 import subprocess
 import sys
 
 from dotenv import load_dotenv
+from credential_manager import (
+    CredentialManager,
+    save_credential_to_env as _save_credential,
+    delete_env_file as _delete_env,
+    get_google_api_key,
+    get_facebook_credentials,
+    get_openai_api_key,
+    run_setup_wizard,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -41,13 +49,6 @@ def is_frozen() -> bool:
 def get_project_root() -> str:
     """
     Get the project root directory.
-
-    For development mode, this returns the directory containing the config.py file,
-    which is the project root. This is more reliable than os.getcwd() which can
-    vary depending on where the command is run from.
-
-    Returns:
-        Absolute path to the project root directory
     """
     # Use the directory containing this config.py file as the project root
     return os.path.dirname(os.path.abspath(__file__))
@@ -56,12 +57,6 @@ def get_project_root() -> str:
 def get_env_file_path() -> str:
     """
     Get the path to the .env file.
-
-    - For frozen executables: Uses platform-appropriate app data directory
-    - For development: Always uses project directory for consistency
-
-    This ensures development environments have their .env in the project folder
-    for easy access and version control awareness (though .env should be gitignored).
     """
     if is_frozen():
         # Use platform-appropriate app data directory for frozen builds
@@ -70,8 +65,6 @@ def get_env_file_path() -> str:
         return os.path.join(app_dir, ".env")
     else:
         # Development mode - always use project directory
-        # Use project root instead of CWD for consistency regardless of where
-        # the command is executed from
         project_dir = get_project_root()
         return os.path.join(project_dir, ".env")
 
@@ -79,13 +72,6 @@ def get_env_file_path() -> str:
 def get_db_path(db_name: str = "insights.db") -> str:
     """
     Get the database path, using app data directory for frozen builds.
-
-    - For frozen executables: Uses platform-appropriate app data directory
-    - For development: Always uses project directory (not AppData)
-
-    This ensures development environments have their database in the project folder
-    for easy access and debugging, while release builds use system-appropriate
-    data directories.
     """
     if is_frozen():
         # Frozen builds use platform-appropriate app data directory
@@ -94,8 +80,6 @@ def get_db_path(db_name: str = "insights.db") -> str:
         return os.path.join(app_dir, db_name)
     else:
         # Development mode - always use project directory
-        # Use project root instead of CWD for consistency regardless of where
-        # the command is executed from
         project_dir = get_project_root()
         db_path = os.path.join(project_dir, db_name)
         return db_path
@@ -105,226 +89,39 @@ def get_db_path(db_name: str = "insights.db") -> str:
 _env_path = get_env_file_path()
 if os.path.exists(_env_path):
     load_dotenv(_env_path)
-    logging.info(f"Loaded environment from: {_env_path}")
+    # Decrypt sensitive values in os.environ for runtime use
+    for key in CredentialManager.SENSITIVE_KEYS:
+        val = os.getenv(key)
+        if val:
+            os.environ[key] = CredentialManager.decrypt(val)
+    logging.info(f"Loaded environment from: {os.path.basename(_env_path)}")
 else:
-    # Try loading from default locations (CWD, etc.)
     load_dotenv()
+    for key in CredentialManager.SENSITIVE_KEYS:
+        val = os.getenv(key)
+        if val:
+            os.environ[key] = CredentialManager.decrypt(val)
 
 
-# --- Credential Saving ---
+# --- Re-export Credential Management Functions (Maintaining backward compatibility) ---
 
 
 def save_credential_to_env(key: str, value: str) -> bool:
-    """
-    Save or update a credential in the .env file.
-
-    Args:
-        key: The environment variable name (e.g., "GOOGLE_API_KEY")
-        value: The value to save
-
-    Returns:
-        True if saved successfully, False otherwise
-    """
-    env_path = get_env_file_path()
-
-    # Ensure directory exists
-    env_dir = os.path.dirname(env_path)
-    if env_dir and not os.path.exists(env_dir):
-        try:
-            os.makedirs(env_dir, exist_ok=True)
-        except OSError as e:
-            logging.error(f"Failed to create directory {env_dir}: {e}")
-            return False
-
-    try:
-        # Read existing content
-        existing_lines = []
-        if os.path.exists(env_path):
-            with open(env_path, encoding="utf-8") as f:
-                existing_lines = f.readlines()
-
-        # Update or add the key
-        key_found = False
-        new_lines = []
-        for line in existing_lines:
-            stripped = line.strip()
-            # Check if this line defines our key (handle KEY=value, KEY = value, etc.)
-            if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
-                new_lines.append(f"{key}={value}\n")
-                key_found = True
-            else:
-                new_lines.append(line)
-
-        if not key_found:
-            # Add newline before new key if file doesn't end with one
-            if new_lines and not new_lines[-1].endswith("\n"):
-                new_lines.append("\n")
-            new_lines.append(f"{key}={value}\n")
-
-        # Write back
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-
-        # Also set in current environment
-        os.environ[key] = value
-
-        logging.info(f"Saved {key} to {env_path}")
-        return True
-
-    except Exception as e:
-        logging.error(f"Failed to save credential {key}: {e}")
-        return False
+    """Wrapper for backward compatibility."""
+    return _save_credential(key, value, get_env_file_path())
 
 
 def delete_env_file() -> bool:
-    """
-    Delete the .env file (for clearing all credentials).
-
-    Returns:
-        True if deleted successfully or file didn't exist, False on error
-    """
-    env_path = get_env_file_path()
-
-    try:
-        if os.path.exists(env_path):
-            os.remove(env_path)
-            logging.info(f"Deleted credentials file: {env_path}")
-        return True
-    except Exception as e:
-        logging.error(f"Failed to delete credentials file: {e}")
-        return False
-
-
-# --- Credential Retrieval with Prompting ---
-
-
-def get_google_api_key() -> str:
-    """
-    Gets the Google API key from environment variables or prompts the user.
-
-    Returns:
-        The Google API key
-
-    Raises:
-        ValueError: If no API key is provided
-    """
-    api_key = os.getenv("GOOGLE_API_KEY")
-
-    if api_key:
-        logging.info("Loading Google API key from environment variables.")
-        return api_key
-
-    # Skip prompting if in CI or non-interactive environment
-    if os.getenv("CI") == "true" or not sys.stdin.isatty():
-        logging.warning(
-            "CI environment detected or non-interactive shell. Skipping Google API key prompt."
-        )
-        raise ValueError("GOOGLE_API_KEY environment variable is required in non-interactive mode.")
-
-    logging.info("Google API key not found. Prompting user.")
-    print("\n" + "=" * 50)
-    print("  Google API Key not found!")
-    print("=" * 50)
-    print("\nThe Gemini API key is required for AI features.")
-    print("Get your API key from: https://aistudio.google.com/apikey\n")
-
-    try:
-        api_key = getpass.getpass("Enter Google API Key: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\n")
-        raise ValueError("Google API key is required for AI features.") from None
-
-    if not api_key:
-        raise ValueError("Google API key is required for AI features.")
-
-    # Offer to save
-    try:
-        save = input("Save API key for future sessions? (y/n): ").lower().strip()
-        if save == "y":
-            if save_credential_to_env("GOOGLE_API_KEY", api_key):
-                print("  API key saved!")
-            else:
-                print("  Warning: Failed to save API key. It will need to be re-entered next time.")
-    except (EOFError, KeyboardInterrupt):
-        print("\n  Skipping save.")
-
-    return api_key
-
-
-def get_facebook_credentials() -> tuple[str, str]:
-    """
-    Securely gets Facebook username and password from environment variables or via command line prompt.
-    Prioritizes environment variables (FB_USER, FB_PASS) for non-interactive use.
-    If not found in env, prompts the user securely and offers to save.
-
-    Returns:
-        Tuple of (username, password)
-
-    Raises:
-        ValueError: If credentials are empty or not provided
-    """
-    fb_user = os.getenv("FB_USER")
-    fb_pass = os.getenv("FB_PASS")
-
-    if fb_user and fb_pass:
-        logging.info("Loading Facebook credentials from environment variables.")
-        return fb_user, fb_pass
-
-    # Skip prompting if in CI or non-interactive environment
-    if os.getenv("CI") == "true" or not sys.stdin.isatty():
-        logging.warning(
-            "CI environment detected or non-interactive shell. Skipping Facebook credentials prompt."
-        )
-        raise ValueError(
-            "FB_USER and FB_PASS environment variables are required in non-interactive mode."
-        )
-
-    logging.info("Facebook credentials not found in environment variables. Prompting user.")
-    print("\n" + "=" * 50)
-    print("  Facebook Credentials Required")
-    print("=" * 50)
-    print("\nFacebook credentials are required for scraping.\n")
-
-    try:
-        username = input("Enter Facebook Email/Username: ").strip()
-        password = getpass.getpass("Enter Facebook Password: ")
-    except (EOFError, KeyboardInterrupt):
-        print("\n")
-        raise ValueError("Facebook email and password are required.") from None
-
-    if not username or not password:
-        raise ValueError("Facebook email and password are required.")
-
-    # Offer to save
-    try:
-        save = input("Save credentials for future sessions? (y/n): ").lower().strip()
-        if save == "y":
-            saved_user = save_credential_to_env("FB_USER", username)
-            saved_pass = save_credential_to_env("FB_PASS", password)
-            if saved_user and saved_pass:
-                print("  Credentials saved!")
-            else:
-                print(
-                    "  Warning: Failed to save credentials. They will need to be re-entered next time."
-                )
-    except (EOFError, KeyboardInterrupt):
-        print("\n  Skipping save.")
-
-    return username, password
+    """Wrapper for backward compatibility."""
+    return _delete_env(get_env_file_path())
 
 
 # --- First-Run Detection ---
 
 
 def is_first_run() -> bool:
-    """
-    Check if this is the first run of the application.
-
-    Returns:
-        True if no .env file exists (first run), False otherwise
-    """
-    env_path = get_env_file_path()
-    return not os.path.exists(env_path)
+    """Check if no .env file exists."""
+    return not os.path.exists(get_env_file_path())
 
 
 def has_google_api_key() -> bool:
@@ -337,6 +134,14 @@ def has_facebook_credentials() -> bool:
     return bool(os.getenv("FB_USER") and os.getenv("FB_PASS"))
 
 
+def has_openai_api_key() -> bool:
+    """Check if OpenAI API key is configured."""
+    if os.getenv("OPENAI_API_KEY"):
+        return True
+    base_url = get_openai_base_url()
+    return "localhost" in base_url or "127.0.0.1" in base_url
+
+
 # --- Playwright Session Configuration ---
 SESSION_STATE_PATH = os.path.join(get_project_root(), "session_state.json")
 
@@ -347,55 +152,36 @@ _PLAYWRIGHT_CHECKED = False
 
 
 def get_scraper_engine() -> str:
-    """
-    Get the configured scraper engine.
-
-    Returns:
-        Engine type: 'selenium' or 'playwright'
-    """
+    """Get the configured scraper engine."""
     return os.getenv("SCRAPER_ENGINE", DEFAULT_SCRAPER_ENGINE).lower()
 
 
 def ensure_playwright_installed():
-    """
-    Ensures Playwright Chromium is installed if the engine is set to 'playwright'.
-    Robust against repeated calls and missing package.
-    """
+    """Ensures Playwright Chromium is installed if needed."""
     global _PLAYWRIGHT_CHECKED
 
     if get_scraper_engine() != "playwright" or _PLAYWRIGHT_CHECKED:
         return
 
     try:
-        # Check if playwright package is even installed
         import playwright  # noqa: F401
     except ImportError:
-        logging.error(
-            "Playwright python package is not installed. Please run 'pip install playwright' first."
-        )
+        logging.error("Playwright python package is not installed.")
         return
 
     try:
-        logging.info("Checking/Installing Playwright Chromium (this may take a moment)...")
-        # Running 'playwright install chromium' is idempotent and fast if already installed
-        # We use a longer timeout for the install process
-        result = subprocess.run(
+        logging.info("Checking/Installing Playwright Chromium...")
+        subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
             check=True,
             capture_output=True,
             text=True,
-            timeout=300,  # 5 minute timeout for installation
+            timeout=300,
         )
-        if result.stdout:
-            logging.debug(f"Playwright install output: {result.stdout}")
         _PLAYWRIGHT_CHECKED = True
         logging.info("Playwright Chromium check complete.")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to install Playwright Chromium: {e.stderr or e.stdout}")
-    except subprocess.TimeoutExpired:
-        logging.error("Playwright installation timed out.")
     except Exception as e:
-        logging.error(f"Unexpected error ensuring Playwright installation: {e}")
+        logging.error(f"Failed to ensure Playwright: {e}")
 
 
 # --- AI Filtering Configuration ---
@@ -418,8 +204,6 @@ AI_FILTER_KEYWORDS = [
 
 
 # --- AI Provider Configuration ---
-
-# Default values
 DEFAULT_AI_PROVIDER = "gemini"
 DEFAULT_GEMINI_MODEL = "models/gemini-2.0-flash"
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -427,161 +211,23 @@ DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
 
 def get_ai_provider_type() -> str:
-    """
-    Get the configured AI provider type.
-
-    Returns:
-        Provider type: 'gemini' or 'openai'
-    """
+    """Get the configured AI provider type."""
     return os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).lower()
 
 
 def get_gemini_model() -> str:
-    """
-    Get the configured Gemini model.
-
-    Returns:
-        Gemini model identifier (e.g., 'models/gemini-2.0-flash')
-    """
+    """Get the configured Gemini model."""
     model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
-    # Ensure model has the correct prefix
     if not model.startswith("models/"):
         model = f"models/{model}"
     return model
 
 
 def get_openai_base_url() -> str:
-    """
-    Get the configured OpenAI-compatible API base URL.
-
-    Returns:
-        Base URL for the API (e.g., 'https://api.openai.com/v1')
-    """
+    """Get the configured OpenAI base URL."""
     return os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
 
 
-def get_openai_api_key() -> str:
-    """
-    Gets the OpenAI API key from environment variables or prompts the user.
-
-    Returns:
-        The OpenAI API key
-
-    Raises:
-        ValueError: If no API key is provided
-    """
-    api_key = os.getenv("OPENAI_API_KEY")
-
-    if api_key:
-        logging.info("Loading OpenAI API key from environment variables.")
-        return api_key
-
-    # Check if we're using a local provider that doesn't need a key
-    base_url = get_openai_base_url()
-    if "localhost" in base_url or "127.0.0.1" in base_url:
-        logging.info("Using local OpenAI-compatible provider, no API key required.")
-        return "not-needed"  # Many local providers don't need a key
-
-    # Skip prompting if in CI or non-interactive environment
-    if os.getenv("CI") == "true" or not sys.stdin.isatty():
-        logging.warning(
-            "CI environment detected or non-interactive shell. Skipping OpenAI API key prompt."
-        )
-        raise ValueError("OPENAI_API_KEY environment variable is required in non-interactive mode.")
-
-    logging.info("OpenAI API key not found. Prompting user.")
-    print("\n" + "=" * 50)
-    print("  OpenAI API Key not found!")
-    print("=" * 50)
-    print("\nThe OpenAI API key is required for AI features.")
-    print("Get your API key from: https://platform.openai.com/api-keys\n")
-
-    try:
-        api_key = getpass.getpass("Enter OpenAI API Key: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\n")
-        raise ValueError("OpenAI API key is required for AI features.") from None
-
-    if not api_key:
-        raise ValueError("OpenAI API key is required for AI features.")
-
-    # Offer to save
-    try:
-        save = input("Save API key for future sessions? (y/n): ").lower().strip()
-        if save == "y":
-            if save_credential_to_env("OPENAI_API_KEY", api_key):
-                print("  API key saved!")
-            else:
-                print("  Warning: Failed to save API key. It will need to be re-entered next time.")
-    except (EOFError, KeyboardInterrupt):
-        print("\n  Skipping save.")
-
-    return api_key
-
-
 def get_openai_model() -> str:
-    """
-    Get the configured OpenAI model.
-
-    Returns:
-        OpenAI model identifier (e.g., 'gpt-4o-mini')
-    """
+    """Get the configured OpenAI model."""
     return os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-
-
-def has_openai_api_key() -> bool:
-    """Check if OpenAI API key is configured (or using local provider)."""
-    if os.getenv("OPENAI_API_KEY"):
-        return True
-    # Local providers don't need a key
-    base_url = get_openai_base_url()
-    return "localhost" in base_url or "127.0.0.1" in base_url
-
-
-# --- Setup Wizard ---
-
-
-def run_setup_wizard() -> None:
-    """Interactive setup wizard for first-time users."""
-    print("\n" + "-" * 50)
-    print("  SETUP WIZARD")
-    print("-" * 50)
-
-    # Google API Key
-    print("\n1)  Google Gemini API Key")
-    print("    Get your key: https://aistudio.google.com/apikey")
-
-    try:
-        api_key = getpass.getpass("    Enter API Key (or press Enter to skip): ").strip()
-        if api_key:
-            if save_credential_to_env("GOOGLE_API_KEY", api_key):
-                print("    Saved!")
-            else:
-                print("    Warning: Failed to save API key.")
-    except (EOFError, KeyboardInterrupt):
-        print("\n    Skipped.")
-
-    # Facebook Credentials
-    print("\n2)  Facebook Credentials")
-    print("    Required for scraping Facebook groups")
-
-    try:
-        fb_setup = input("    Set up now? (y/n): ").lower().strip()
-        if fb_setup == "y":
-            username = input("    Email/Username: ").strip()
-            password = getpass.getpass("    Password: ")
-            if username and password:
-                saved_user = save_credential_to_env("FB_USER", username)
-                saved_pass = save_credential_to_env("FB_PASS", password)
-                if saved_user and saved_pass:
-                    print("    Saved!")
-                else:
-                    print("    Warning: Failed to save credentials.")
-    except (EOFError, KeyboardInterrupt):
-        print("\n    Skipped.")
-
-    print("\n" + "-" * 50)
-    print("  Setup complete!")
-    print("-" * 50)
-    print(f"\nCredentials saved to: {get_env_file_path()}")
-    print("You can edit this file directly to update credentials.\n")

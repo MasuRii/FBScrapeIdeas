@@ -56,8 +56,9 @@ class TestOverlayDismissal(unittest.TestCase):
         dismiss_overlays(self.mock_driver)
 
         # It should still call ensure_scrollable (via execute_script)
+        # Match the implementation in scraper/facebook_scraper.py which uses FORCE_SCROLLABLE_SCRIPT wrapped in an IIFE
         self.mock_driver.execute_script.assert_any_call(
-            "document.body.style.overflow = 'visible'; document.documentElement.style.overflow = 'visible';"
+            "(() => {\n    document.body.style.overflow = 'visible';\n    document.body.style.overflowY = 'scroll';\n    document.documentElement.style.overflow = 'visible';\n    document.documentElement.style.overflowY = 'scroll';\n})()"
         )
         print("✅ Verified: Correct actions taken when no overlays are present.")
 
@@ -80,7 +81,8 @@ class TestOverlayDismissal(unittest.TestCase):
         dismiss_overlays(self.mock_driver)
 
         # Verify ESC key script was called
-        esc_script = "document.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Escape'}));"
+        # Match the implementation which uses DISPATCH_ESC_SCRIPT wrapped in an IIFE
+        esc_script = "(() => {\n    document.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Escape', 'code': 'Escape', 'keyCode': 27}));\n    document.dispatchEvent(new KeyboardEvent('keyup', {'key': 'Escape', 'code': 'Escape', 'keyCode': 27}));\n})()"
         self.mock_driver.execute_script.assert_any_call(esc_script)
         print("✅ Verified: Fallback to ESC key triggered when buttons are missing.")
 
