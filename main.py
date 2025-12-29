@@ -6,7 +6,13 @@ import sys
 from datetime import datetime, timezone
 from typing import Optional
 
-from config import get_db_path, get_env_file_path, is_first_run, run_setup_wizard
+from config import (
+    get_db_path,
+    get_env_file_path,
+    is_first_run,
+    run_setup_wizard,
+    get_scraper_engine,
+)
 from scraper.webdriver_setup import init_webdriver
 from database.crud import (
     add_comments_for_post,
@@ -31,6 +37,8 @@ from database.stats_queries import get_all_statistics
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.getLogger("WDM").setLevel(logging.WARNING)
 logging.getLogger("webdriver_manager").setLevel(logging.WARNING)
+# Suppress playwright logging unless it's an error
+logging.getLogger("playwright").setLevel(logging.WARNING)
 
 
 def get_or_create_group_id(
@@ -71,11 +79,12 @@ def get_or_create_group_id(
         return None
 
 
-def handle_scrape_command(
+async def handle_scrape_command(
     group_url: str = None,
     group_id: int = None,
     num_posts: int = 20,
     headless: bool = False,
+    engine: str = None,
 ):
     """Handles the Facebook scraping process for a specific group.
 
@@ -84,89 +93,147 @@ def handle_scrape_command(
         group_id: ID of an existing group (either URL or ID must be provided)
         num_posts: Number of posts to scrape (default: 20)
         headless: Run browser in headless mode (default: False)
+        engine: Scraper engine to use ('selenium' or 'playwright')
     """
     if not group_url and not group_id:
         logging.error("Either --group-url or --group-id must be provided")
         return
 
-    logging.info(f"Running scrape command (fetching {num_posts} posts). Headless: {headless}")
+    engine = engine or get_scraper_engine()
+    logging.info(
+        f"Running scrape command (fetching {num_posts} posts) using {engine} engine. Headless: {headless}"
+    )
 
-    # Import scraper-specific modules here to avoid circular imports
-    from config import get_facebook_credentials
-    from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group
+    conn = get_db_connection()
+    if not conn:
+        logging.error("Could not connect to the database.")
+        return
 
-    driver = None
-    conn = None
     try:
-        username, password = get_facebook_credentials()
+        if group_url and not group_id:
+            group_id = get_or_create_group_id(conn, group_url)
+            if not group_id:
+                logging.error("Failed to resolve or create group from URL")
+                return
 
-        logging.info("Initializing Selenium WebDriver...")
-        driver = init_webdriver(headless=headless)
-        logging.info("WebDriver initialized.")
+        if engine == "playwright":
+            from scraper.playwright_scraper import PlaywrightScraper
+            from ai.filtering_pipeline import FilteringPipeline
 
-        login_success = login_to_facebook(driver, username, password)
+            scraper = PlaywrightScraper(headless=headless)
+            pipeline = FilteringPipeline()
 
-        if login_success:
-            logging.info("Facebook login successful.")
+            logging.info("Initializing Playwright engine...")
 
-            conn = get_db_connection()
-            if conn:
-                if group_url and not group_id:
-                    group_id = get_or_create_group_id(conn, group_url)
-                    if not group_id:
-                        logging.error("Failed to resolve or create group from URL")
-                        return
+            added_count = 0
+            scraped_count = 0
 
-                scraped_posts_generator = scrape_authenticated_group(
-                    driver,
-                    group_url or f"ID:{group_id}",
-                    num_posts,
-                )
-                added_count = 0
-                scraped_count = 0
-                for post in scraped_posts_generator:
-                    scraped_count += 1
-                    try:
-                        internal_post_id = add_scraped_post(conn, post, group_id)
-                        if internal_post_id:
-                            added_count += 1
-                            if post.get("comments"):
-                                add_comments_for_post(conn, internal_post_id, post["comments"])
-                        else:
-                            logging.warning(
-                                f"Failed to add post {post.get('post_url')}. Skipping comments for this post."
-                            )
-                    except Exception as e:
-                        logging.error(f"Error saving post {post.get('post_url')}: {e}")
-                if scraped_count > 0:
-                    logging.info(
-                        f"Scraped {scraped_count} posts. Successfully added {added_count} new posts (and their comments) to the database."
-                    )
+            async for post in scraper.scrape_group(group_url or f"ID:{group_id}", limit=num_posts):
+                scraped_count += 1
+
+                # Transform Playwright format to DB format
+                db_post = post.copy()
+
+                # Real-time AI Filtering & Analysis
+                analysis = await pipeline.analyze_post(db_post)
+                if analysis:
+                    db_post.update(analysis)
+                    db_post["is_processed_by_ai"] = 1
                 else:
-                    logging.info("No posts were scraped.")
-            else:
-                logging.error("Could not connect to the database.")
+                    db_post["is_processed_by_ai"] = 0
 
-        else:
-            logging.error("Facebook login failed. Cannot proceed with scraping.")
+                try:
+                    internal_post_id = add_scraped_post(conn, db_post, group_id)
+                    if internal_post_id:
+                        added_count += 1
+                        # Note: Playwright scraper currently doesn't deep-scrape comments in the main loop
+                        # but we could add that later.
+                    else:
+                        logging.warning(
+                            f"Post already exists or failed to add: {db_post.get('post_url')}"
+                        )
+                except Exception as e:
+                    logging.error(f"Error saving post {db_post.get('post_url')}: {e}")
 
-    except ValueError as e:
-        logging.error(f"Configuration error: {e}")
+            logging.info(f"\nScrape Summary ({engine}):")
+            logging.info(f"  Total Scraped: {scraped_count}")
+            logging.info(f"  New Posts Added: {added_count}")
+            logging.info(f"  AI Analyzed: {pipeline.processed_count}")
+            logging.info(f"  AI Skipped: {pipeline.skipped_count}")
+
+        else:  # Legacy Selenium engine
+            from config import get_facebook_credentials
+            from scraper.facebook_scraper import login_to_facebook, scrape_authenticated_group
+            from ai.filtering_pipeline import FilteringPipeline
+
+            username, password = get_facebook_credentials()
+            logging.info("Initializing Selenium WebDriver...")
+            driver = init_webdriver(headless=headless)
+            pipeline = FilteringPipeline()
+
+            try:
+                login_success = login_to_facebook(driver, username, password)
+                if login_success:
+                    scraped_posts_generator = scrape_authenticated_group(
+                        driver,
+                        group_url or f"ID:{group_id}",
+                        num_posts,
+                    )
+                    added_count = 0
+                    scraped_count = 0
+                    for post in scraped_posts_generator:
+                        scraped_count += 1
+
+                        # Real-time AI Filtering & Analysis (Legacy adaptation)
+                        # FacebookScraper returns dicts that match add_scraped_post expectations
+                        # but we need 'post_content_raw' for the pipeline
+                        db_post = post.copy()
+                        if "post_content_raw" not in db_post and "content_text" in db_post:
+                            db_post["post_content_raw"] = db_post["content_text"]
+
+                        analysis = await pipeline.analyze_post(db_post)
+                        if analysis:
+                            db_post.update(analysis)
+                            db_post["is_processed_by_ai"] = 1
+                        else:
+                            db_post["is_processed_by_ai"] = 0
+
+                        try:
+                            internal_post_id = add_scraped_post(conn, db_post, group_id)
+                            if internal_post_id:
+                                added_count += 1
+                                if post.get("comments"):
+                                    add_comments_for_post(conn, internal_post_id, post["comments"])
+                        except Exception as e:
+                            logging.error(f"Error saving post {post.get('post_url')}: {e}")
+
+                    logging.info(f"\nScrape Summary ({engine}):")
+                    logging.info(f"  Total Scraped: {scraped_count}")
+                    logging.info(f"  New Posts Added: {added_count}")
+                    logging.info(f"  AI Analyzed: {pipeline.processed_count}")
+                    logging.info(f"  AI Skipped: {pipeline.skipped_count}")
+                else:
+                    logging.error("Facebook login failed.")
+            finally:
+                if driver:
+                    driver.quit()
+
     except Exception as e:
-        logging.error(f"An error occurred during the scraping process: {e}", exc_info=True)
+        logging.error(f"An error occurred: {e}", exc_info=True)
     finally:
-        if driver:
-            try:
-                driver.quit()
-                logging.info("WebDriver closed.")
-            except Exception as e:
-                logging.warning(f"Error closing WebDriver: {e}")
         if conn:
-            try:
-                conn.close()
-                logging.info("Database connection closed.")
-            except Exception as e:
-                logging.warning(f"Error closing database connection: {e}")
+            conn.close()
+
+
+async def handle_manual_login_command():
+    """Triggers the Playwright manual login process."""
+    from scraper.session_manager import SessionManager
+    from config import SESSION_STATE_PATH
+    import playwright.async_api
+
+    manager = SessionManager(SESSION_STATE_PATH)
+    async with playwright.async_api.async_playwright() as p:
+        await manager.manual_login(p)
 
 
 async def handle_process_ai_command(group_id: int = None):
@@ -684,6 +751,7 @@ def main():
     command_handlers = {
         "scrape": handle_scrape_command,
         "process_ai": handle_process_ai_command,
+        "manual_login": handle_manual_login_command,
         "view": handle_view_command,
         "export": handle_export_command,
         "add_group": handle_add_group_command,

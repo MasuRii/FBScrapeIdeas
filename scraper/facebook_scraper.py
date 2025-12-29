@@ -403,6 +403,29 @@ def dismiss_overlays(driver: WebDriver) -> None:
     nuke_blocking_elements(driver)
 
 
+def _prune_dom(driver: WebDriver) -> None:
+    """
+    Removes processed elements from the DOM to save memory.
+    Facebook's feed can grow extremely large, slowing down the browser.
+    Pattern: Keep only the most recent N articles.
+    """
+    logging.debug("Pruning DOM to optimize memory...")
+    try:
+        # 2025 Selectors: div[role="article"] and high-level feed units
+        script = """
+        const articles = document.querySelectorAll('div[role="article"], div[data-pagelet^="FeedUnit_"]');
+        if (articles.length > 15) {
+            // Remove all but the last 10 articles
+            for (let i = 0; i < articles.length - 10; i++) {
+                articles[i].remove();
+            }
+        }
+        """
+        driver.execute_script(script)
+    except Exception as e:
+        logging.debug(f"DOM pruning failed: {e}")
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -509,10 +532,10 @@ def _extract_data_from_post_html(
     post_data = {
         "facebook_post_id": post_id_from_main,
         "post_url": post_url_from_main,
-        "content_text": "N/A",
-        "posted_at": None,
+        "text": "N/A",
+        "timestamp": None,
         "scraped_at": datetime.now(UTC).isoformat(),
-        "post_author_name": None,
+        "author_name": None,
         "post_author_profile_pic_url": None,
         "post_image_url": None,
         "comments": [],
@@ -537,7 +560,7 @@ def _extract_data_from_post_html(
         try:
             author_name_el = soup.select_one(AUTHOR_NAME_BS)
             if author_name_el:
-                post_data["post_author_name"] = author_name_el.get_text(strip=True)
+                post_data["author_name"] = author_name_el.get_text(strip=True)
         except Exception as e:
             logging.debug(f"BS: Could not extract author name for post {post_id_from_main}: {e}")
 
@@ -562,14 +585,12 @@ def _extract_data_from_post_html(
                 if generic_text_div:
                     text_content = generic_text_div.get_text(separator=" ", strip=True)
 
-            post_data["content_text"] = (
-                text_content if text_content and text_content.strip() else "N/A"
-            )
+            post_data["text"] = text_content if text_content and text_content.strip() else "N/A"
         except Exception as e:
             logging.error(
                 f"BS: Error extracting post text for {post_id_from_main}: {e}", exc_info=True
             )
-            post_data["content_text"] = "N/A"
+            post_data["text"] = "N/A"
 
     if scrape_all_fields or "post_image_url" in fields_to_scrape:
         try:
@@ -638,7 +659,7 @@ def _extract_data_from_post_html(
                         and len(link_text) > 2
                         and len(link_text) < 30
                         and not (
-                            link_text.lower() == (post_data.get("post_author_name") or "").lower()
+                            link_text.lower() == (post_data.get("author_name") or "").lower()
                             or "comment" in link_text.lower()
                         )
                     ):
@@ -656,34 +677,34 @@ def _extract_data_from_post_html(
             if raw_timestamp:
                 parsed_dt = parse_fb_timestamp(raw_timestamp)
                 if parsed_dt:
-                    post_data["posted_at"] = parsed_dt.isoformat()
+                    post_data["timestamp"] = parsed_dt.isoformat()
                     logging.debug(
-                        f"BS: Successfully parsed timestamp '{raw_timestamp}' to '{post_data['posted_at']}' for post {post_id_from_main}"
+                        f"BS: Successfully parsed timestamp '{raw_timestamp}' to '{post_data['timestamp']}' for post {post_id_from_main}"
                     )
                 else:
                     logging.warning(
                         f"BS: Failed to parse raw timestamp '{raw_timestamp}' for post {post_id_from_main}"
                     )
-                    post_data["posted_at"] = None
+                    post_data["timestamp"] = None
             else:
                 logging.debug(
                     f"BS: Could not extract any raw timestamp string for post {post_id_from_main}"
                 )
-                post_data["posted_at"] = None
+                post_data["timestamp"] = None
         except Exception as e:
             logging.warning(
                 f"BS: Error during timestamp extraction for post {post_id_from_main}: {e}",
                 exc_info=True,
             )
-            post_data["posted_at"] = None
+            post_data["timestamp"] = None
 
     if scrape_all_fields or "comments" in fields_to_scrape:
         try:
             comment_elements_soup = soup.select(COMMENT_CONTAINER_BS)
             for comment_s_el in comment_elements_soup:
                 comment_details = {
-                    "commenterProfilePic": None,
                     "commenterName": None,
+                    "commenterProfilePic": None,
                     "commentText": "N/A",
                     "commentFacebookId": None,
                     "comment_timestamp": None,
@@ -770,9 +791,9 @@ def _extract_data_from_post_html(
             logging.warning(f"BS: Error extracting comments for post {post_id_from_main}: {e}")
 
     if (post_data["post_url"] or post_data["facebook_post_id"]) and (
-        post_data["content_text"] != "N/A"
-        or post_data["posted_at"] is not None
-        or post_data["post_author_name"] is not None
+        post_data["text"] != "N/A"
+        or post_data["timestamp"] is not None
+        or post_data["author_name"] is not None
     ):
         return post_data
     else:
@@ -1029,6 +1050,9 @@ def scrape_authenticated_group(
                             logging.debug(
                                 f"Yielded post {extracted_count}/{num_posts} (ID: {result.get('facebook_post_id')}) by worker."
                             )
+                            # Periodic DOM pruning to optimize memory
+                            if extracted_count % 5 == 0:
+                                _prune_dom(driver)
                     except concurrent.futures.TimeoutError:
                         logging.warning(
                             "Timeout getting result from a future. Will retry or discard later."

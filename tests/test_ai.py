@@ -9,8 +9,8 @@ from ai.gemini_service import create_post_batches, categorize_posts_batch
 
 # Mock posts and comments
 MOCK_POSTS = [
-    {"internal_post_id": 1, "post_content_raw": "Test post 1 content"},
-    {"internal_post_id": 2, "post_content_raw": "Test post 2 content"},
+    {"internal_post_id": 1, "post_content_raw": "Test post 1 content with project idea"},
+    {"internal_post_id": 2, "post_content_raw": "Test post 2 content about software problem"},
 ]
 
 MOCK_COMMENTS = [
@@ -260,11 +260,16 @@ def test_create_post_batches():
 
 @pytest.mark.asyncio
 async def test_categorize_posts_batch_wrapper():
-    with patch("ai.provider_factory.get_ai_provider") as mock_factory:
+    # Patch where it's used, not where it's defined
+    with patch("ai.filtering_pipeline.get_ai_provider") as mock_factory:
         mock_provider = MagicMock()
         mock_provider.analyze_posts_batch = AsyncMock(return_value=[{"status": "ok"}])
         mock_factory.return_value = mock_provider
 
-        results = await categorize_posts_batch(MOCK_POSTS)
-        assert results == [{"status": "ok"}]
-        mock_provider.analyze_posts_batch.assert_called_once_with(MOCK_POSTS)
+        # Ensure posts pass the filter
+        posts = [{"internal_post_id": 1, "text": "project idea"}]
+
+        results = await categorize_posts_batch(posts)
+        assert len(results) == 1
+        assert results[0]["status"] == "ok"
+        mock_provider.analyze_posts_batch.assert_called_once()

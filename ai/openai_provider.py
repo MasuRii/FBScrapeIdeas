@@ -148,12 +148,16 @@ class OpenAIProvider(AIProvider):
 
         # Build user prompt with posts
         user_prompt_parts = ["Posts:\n"]
-        post_id_map = {post["internal_post_id"]: post for post in posts}
+        post_id_map = {}
+        for post in posts:
+            p_id = post.get("post_id") or post.get("internal_post_id")
+            if p_id:
+                post_id_map[str(p_id)] = post
 
         for post in posts:
-            user_prompt_parts.append(
-                f"[POST_ID_{post['internal_post_id']}: {post['post_content_raw']}]\n"
-            )
+            p_id = post.get("post_id") or post.get("internal_post_id")
+            p_text = post.get("text") or post.get("post_content_raw") or "N/A"
+            user_prompt_parts.append(f"[POST_ID_{p_id}: {p_text}]\n")
 
         user_prompt = "".join(user_prompt_parts)
 
@@ -237,22 +241,17 @@ class OpenAIProvider(AIProvider):
             post_id_from_ai = ai_result.get("postId")
 
             if post_id_from_ai and str(post_id_from_ai).startswith("POST_ID_"):
-                try:
-                    id_str_part = str(post_id_from_ai).replace("POST_ID_", "")
-                    match = re.match(r"(\d+)", id_str_part)
-                    if match:
-                        original_id = int(match.group(1))
-                        if original_id in post_id_map:
-                            original_post = post_id_map[original_id]
-                except (ValueError, IndexError) as e:
-                    logging.warning(f"Invalid postId format: {post_id_from_ai}. Error: {e}")
+                id_str_part = str(post_id_from_ai).replace("POST_ID_", "")
+                if id_str_part in post_id_map:
+                    original_post = post_id_map[id_str_part]
 
             # Fallback: match by summary content
             if not original_post:
                 ai_summary = ai_result.get("summary", "")
                 for original in posts:
-                    if original.get("post_content_raw") and ai_summary:
-                        if ai_summary in original["post_content_raw"]:
+                    original_content = original.get("text") or original.get("post_content_raw", "")
+                    if original_content and ai_summary:
+                        if ai_summary in original_content:
                             original_post = original
                             break
 
@@ -262,6 +261,7 @@ class OpenAIProvider(AIProvider):
                     {
                         "ai_category": ai_result.get("category"),
                         "ai_sub_category": ai_result.get("subCategory"),
+                        "ai_sentiment": ai_result.get("sentiment"),
                         "ai_keywords": json.dumps(ai_result.get("keywords", [])),
                         "ai_summary": ai_result.get("summary"),
                         "ai_is_potential_idea": int(ai_result.get("isPotentialIdea", False)),

@@ -15,7 +15,13 @@
                 "type": "STRING",
                 "description": "A more specific sub-category, if applicable."
             },
+            "sentiment": {
+                "type": "STRING",
+                "enum": ["positive", "negative", "neutral", "frustrated"],
+                "description": "The emotional tone of the post."
+            },
             "keywords": {
+
                 "type": "ARRAY",
                 "items": {
                     "type": "STRING"
@@ -38,10 +44,12 @@
         "required": [
             "postId",
             "category",
+            "sentiment",
             "keywords",
             "summary",
             "isPotentialIdea",
             "reasoning"
         ]
+
     }
 }

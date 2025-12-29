@@ -82,9 +82,11 @@ class TestFacebookScraper(unittest.TestCase):
         def until_side_effect(condition):
             call_count[0] += 1
             # First few calls are for feed/post detection - return mock element
-            if call_count[0] <= 3:
+            # Increased limit to allow for overlay checks and other initial waits
+            if call_count[0] <= 15:
                 mock_element = MagicMock()
                 mock_element.is_displayed.return_value = False
+                mock_element.is_enabled.return_value = True
                 return mock_element
             # Later calls are for overlays, wait conditions, see more buttons - raise timeout
             raise TimeoutException("Mocked timeout")
@@ -110,15 +112,21 @@ class TestFacebookScraper(unittest.TestCase):
         # Track find_elements calls
         call_count = [0]
 
-        def find_elements_side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] <= 2:
-                return self.mock_posts[:5]
-            elif call_count[0] <= 4:
-                return self.mock_posts[:10]
-            elif call_count[0] <= 6:
-                return self.mock_posts[:15]
-            return self.mock_posts[:20]
+        def find_elements_side_effect(by, value=None):
+            # Check if this is a call for posts
+            from scraper.facebook_scraper import POST_CONTAINER_S
+
+            if (by, value) == POST_CONTAINER_S or value == POST_CONTAINER_S[1]:
+                call_count[0] += 1
+                if call_count[0] <= 2:
+                    return self.mock_posts[:5]
+                elif call_count[0] <= 4:
+                    return self.mock_posts[:10]
+                elif call_count[0] <= 6:
+                    return self.mock_posts[:15]
+                return self.mock_posts[:20]
+            # Otherwise it's likely an overlay check - return empty list
+            return []
 
         self.mock_driver.find_elements.side_effect = find_elements_side_effect
 
@@ -153,11 +161,15 @@ class TestFacebookScraper(unittest.TestCase):
 
                 call_count = [0]
 
-                def find_elements_side_effect(*args, **kwargs):
-                    call_count[0] += 1
-                    if call_count[0] <= 2:
-                        return self.mock_posts[:5]
-                    return self.mock_posts[:10]
+                def find_elements_side_effect(by, value=None):
+                    from scraper.facebook_scraper import POST_CONTAINER_S
+
+                    if (by, value) == POST_CONTAINER_S or value == POST_CONTAINER_S[1]:
+                        call_count[0] += 1
+                        if call_count[0] <= 2:
+                            return self.mock_posts[:5]
+                        return self.mock_posts[:10]
+                    return []
 
                 self.mock_driver.find_elements.side_effect = find_elements_side_effect
 
@@ -180,8 +192,15 @@ class TestFacebookScraper(unittest.TestCase):
 
         mock_extract.side_effect = extract_side_effect
 
-        # Always return only 3 posts - simulating insufficient posts
-        self.mock_driver.find_elements.return_value = self.mock_posts[:3]
+        # Configure find_elements to only return posts for the post selector
+        def find_elements_side_effect(by, value=None):
+            from scraper.facebook_scraper import POST_CONTAINER_S
+
+            if (by, value) == POST_CONTAINER_S or value == POST_CONTAINER_S[1]:
+                return self.mock_posts[:3]
+            return []
+
+        self.mock_driver.find_elements.side_effect = find_elements_side_effect
 
         results = list(
             scrape_authenticated_group(self.mock_driver, TEST_GROUP_LINKS[0], num_posts=10)

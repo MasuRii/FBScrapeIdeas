@@ -803,11 +803,16 @@ def handle_settings_menu():
         provider_name = "Google Gemini" if status["provider"] == "gemini" else "OpenAI-Compatible"
         print(f"  AI Provider: {provider_name} ({status['model']})")
 
+        from config import get_scraper_engine
+
+        print(f"  Scraper Engine: {get_scraper_engine().capitalize()}")
+
         print("\n  1. Update Google API Key")
         print("  2. Update Facebook Credentials")
-        print("  3. AI Provider Settings")
-        print("  4. Show Config Locations")
-        print("  5. Clear All Saved Credentials")
+        print("  3. Switch Scraper Engine")
+        print("  4. AI Provider Settings")
+        print("  5. Show Config Locations")
+        print("  6. Clear All Saved Credentials")
         print("  0. Back to Main Menu")
         print("=" * 50)
 
@@ -848,14 +853,33 @@ def handle_settings_menu():
                 print("\n  Cancelled.")
 
         elif choice == "3":
-            handle_ai_settings_menu()
+            try:
+                from config import save_credential_to_env, get_scraper_engine
+
+                current = get_scraper_engine()
+                print(f"\n  Current Scraper Engine: {current.capitalize()}")
+                print("  1. Selenium (Stable, requires Chrome)")
+                print("  2. Playwright (2025 Standard, resilient, headless support)")
+
+                engine_choice = input("\n  Select engine (1-2): ").strip()
+                if engine_choice == "1":
+                    save_credential_to_env("SCRAPER_ENGINE", "selenium")
+                    print("  [OK] Switched to Selenium.")
+                elif engine_choice == "2":
+                    save_credential_to_env("SCRAPER_ENGINE", "playwright")
+                    print("  [OK] Switched to Playwright.")
+            except (EOFError, KeyboardInterrupt):
+                print("\n  Cancelled.")
 
         elif choice == "4":
+            handle_ai_settings_menu()
+
+        elif choice == "5":
             print(f"\n  Config file: {get_env_file_path()}")
             print(f"  Database: {get_db_path()}")
             input("\nPress Enter to continue...")
 
-        elif choice == "5":
+        elif choice == "6":
             try:
                 confirm = input("  Delete all saved credentials? Type 'yes' to confirm: ").strip()
                 if confirm.lower() == "yes":
@@ -900,6 +924,16 @@ def create_arg_parser():
         "--headless",
         action="store_true",
         help="Run the browser in headless mode (no GUI).",
+    )
+    scrape_parser.add_argument(
+        "--engine",
+        choices=["selenium", "playwright"],
+        help="Scraper engine to use (default: from config).",
+    )
+
+    subparsers.add_parser(
+        "manual-login",
+        help="Open a browser for manual Facebook login (Playwright only).",
     )
 
     process_ai_parser = subparsers.add_parser(
@@ -996,28 +1030,34 @@ def run_interactive_menu(command_handlers):
         print("\n1. Data Collection:")
         print("   - Scrape Posts, Author Details & Comments")
         print("   - Configurable post count and headless mode")
-        print("\n2. AI Processing:")
+        print("   - Supports Selenium and Playwright engines")
+        print("\n2. Session Management (Playwright):")
+        print("   - Manual Login to Facebook")
+        print("   - Validate and save session state")
+        print("\n3. AI Processing:")
         print("   - Process Posts & Comments with AI")
         print("   - Categorizes content and analyzes sentiment")
         print("   - Supports Gemini and OpenAI-compatible providers")
-        print("\n3. Data Access & Filtering:")
+        print("\n4. Data Access & Filtering:")
         print("   - Browse Posts with Author Details & Comments")
         print("   - Filter by category, date, author, keywords")
         print("   - View potential project ideas")
-        print("\n4. Data Management & Analytics:")
+        print("\n5. Data Management & Analytics:")
         print("   - Export Data to CSV/JSON")
         print("   - Manage Facebook Groups (Add/List/Remove)")
         print("   - View Statistics & Trends")
-        print("\n5. Settings:")
+        print("\n6. Settings:")
         print("   - Manage API Keys & Credentials")
+        print("   - Configure Scraper Engine (Selenium/Playwright)")
         print("   - Configure AI Provider (Gemini/OpenAI)")
-        print("   - View Config Locations")
-        print("\n6. Exit")
+        print("\n7. Exit")
 
-        choice = input("\nEnter your choice (1-6): ").strip()
+        choice = input("\nEnter your choice (1-7): ").strip()
 
         if choice == "1":
             try:
+                from config import get_scraper_engine
+
                 # Validate Facebook URL
                 group_url = get_validated_input(
                     "Enter Facebook Group URL: ",
@@ -1043,8 +1083,20 @@ def run_interactive_menu(command_handlers):
                 )
                 headless = headless_input == "yes"
 
-                command_handlers["scrape"](
-                    group_url=group_url, num_posts=num_posts, headless=headless
+                current_engine = get_scraper_engine()
+                engine_input = (
+                    input(f"Engine (selenium/playwright, default: {current_engine}): ")
+                    .strip()
+                    .lower()
+                )
+                engine = (
+                    engine_input if engine_input in ["selenium", "playwright"] else current_engine
+                )
+
+                asyncio.run(
+                    command_handlers["scrape"](
+                        group_url=group_url, num_posts=num_posts, headless=headless, engine=engine
+                    )
                 )
             except KeyboardInterrupt:
                 print("\nOperation cancelled by user.")
@@ -1053,6 +1105,16 @@ def run_interactive_menu(command_handlers):
             input("\nPress Enter to continue...")
 
         elif choice == "2":
+            try:
+                print("\nTrigging Manual Login...")
+                asyncio.run(command_handlers["manual_login"]())
+            except KeyboardInterrupt:
+                print("\nOperation cancelled by user.")
+            except Exception as e:
+                print(f"\nError during manual login: {e}")
+            input("\nPress Enter to continue...")
+
+        elif choice == "3":
             try:
                 # Display current AI provider info before processing
                 display_provider_info()
@@ -1074,7 +1136,7 @@ def run_interactive_menu(command_handlers):
                 print(f"\nError during AI processing: {e}")
             input("\nPress Enter to continue...")
 
-        elif choice == "3":
+        elif choice == "4":
             try:
                 filters = {}
                 category_filter = input(
@@ -1141,7 +1203,7 @@ def run_interactive_menu(command_handlers):
                 print(f"\nError viewing posts: {e}")
             input("\nPress Enter to continue...")
 
-        elif choice == "4":
+        elif choice == "5":
             print("\nData Management Options:")
             print("1. Add New Facebook Group")
             print("2. List All Tracked Groups")
@@ -1232,14 +1294,14 @@ def run_interactive_menu(command_handlers):
                 print(f"\nError: {e}")
             input("\nPress Enter to continue...")
 
-        elif choice == "5":
+        elif choice == "6":
             handle_settings_menu()
 
-        elif choice == "6":
+        elif choice == "7":
             print("Exiting application. Goodbye!")
             break
         else:
-            print("Invalid choice. Please enter a number between 1-6.")
+            print("Invalid choice. Please enter a number between 1-7.")
             input("\nPress Enter to continue...")
 
 
@@ -1257,9 +1319,17 @@ def handle_cli_arguments(args, command_handlers):
                 if args.group_url and not validate_facebook_url(args.group_url):
                     print("Error: Invalid Facebook group URL provided.")
                     return
-                command_handlers["scrape"](
-                    args.group_url, args.group_id, args.num_posts, args.headless
+                asyncio.run(
+                    command_handlers["scrape"](
+                        group_url=args.group_url,
+                        group_id=args.group_id,
+                        num_posts=args.num_posts,
+                        headless=args.headless,
+                        engine=args.engine,
+                    )
                 )
+            elif args.command == "manual-login":
+                asyncio.run(command_handlers["manual_login"]())
             elif args.command == "process-ai":
                 asyncio.run(command_handlers["process_ai"](args.group_id))
             elif args.command == "view":
@@ -1274,7 +1344,7 @@ def handle_cli_arguments(args, command_handlers):
                     "max_comments": args.max_comments,
                     "is_idea": args.is_idea,
                 }
-                command_handlers["view"](args.group_id, filters, args.limit)
+                command_handlers["view"](group_id=args.group_id, filters=filters, limit=args.limit)
             elif args.command == "export-data":
                 command_handlers["export"](args)
             elif args.command == "add-group":

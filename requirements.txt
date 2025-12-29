@@ -6,6 +6,8 @@ lxml>=6.0.2
 # Browser Automation
 selenium>=4.39.0
 webdriver-manager>=4.0.2
+playwright>=1.50.0
+
 
 # Google Gemini AI
 google-generativeai>=0.8.6

@@ -12,6 +12,7 @@ import logging
 
 # Re-export the utility function that's still used directly
 from ai.gemini_provider import GeminiProvider
+from ai.filtering_pipeline import FilteringPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -20,23 +21,16 @@ async def categorize_posts_batch(posts: list[dict], initial_delay: float = 1.0) 
     """
     Asynchronously sends a batch of posts to AI for categorization.
 
-    This is a backward-compatible wrapper that uses the new provider system.
-
-    Args:
-        posts: A list of dictionaries, each containing 'internal_post_id' and 'post_content_raw'.
-        initial_delay: Initial delay for retry backoff (default 1.0 seconds). Ignored in new implementation.
-
-    Returns:
-        A list of dictionaries with added AI categorization results.
+    This now uses the FilteringPipeline for Stage 1 (Keyword Filter)
+    and Stage 2 (LLM Analysis).
     """
-    from ai.provider_factory import get_ai_provider
+    pipeline = FilteringPipeline()
+    results = await pipeline.analyze_posts_batch(posts)
 
-    try:
-        provider = get_ai_provider()
-        return await provider.analyze_posts_batch(posts)
-    except Exception as e:
-        logging.error(f"Error in categorize_posts_batch: {e}")
-        return []
+    stats = pipeline.get_stats()
+    logging.info(f"Pipeline complete. Processed: {stats['processed']}, Skipped: {stats['skipped']}")
+
+    return results
 
 
 def process_comments_with_gemini(comments: list[dict]) -> list[dict]:
@@ -78,7 +72,7 @@ def create_post_batches(all_posts: list[dict], max_tokens: int = 800000) -> list
     current_tokens = 0
 
     for post in all_posts:
-        content = post.get("post_content_raw", "")
+        content = post.get("text", post.get("post_content_raw", ""))
         post_tokens = len(content) // 4 + 100
 
         if current_tokens + post_tokens > max_tokens:

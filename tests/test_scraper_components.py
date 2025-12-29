@@ -83,7 +83,7 @@ def test_init_webdriver(mock_manager, mock_service, mock_chrome):
 
     assert driver == mock_driver_instance
     mock_chrome.assert_called_once()
-    mock_driver_instance.implicitly_wait.assert_called_with(10)
+    mock_driver_instance.implicitly_wait.assert_called_with(2)
     mock_driver_instance.execute_cdp_cmd.assert_called_once()
 
 
@@ -273,11 +273,11 @@ def test_extract_data_from_post_html_complex():
 
     assert data is not None
     assert data["facebook_post_id"] == "post123"
-    assert data["post_author_name"] == "Author Name"
-    assert "Part 1" in data["content_text"]
-    assert "Part 2" in data["content_text"]
+    assert data["author_name"] == "Author Name"
+    assert "Part 1" in data["text"]
+    assert "Part 2" in data["text"]
     assert data["post_image_url"] == "http://example.com/image.jpg"
-    assert "2024-01-01" in data["posted_at"]
+    assert "2024-01-01" in data["timestamp"]
 
     assert len(data["comments"]) == 2
     assert data["comments"][0]["commenterName"] == "User One"
@@ -316,7 +316,7 @@ def test_extract_data_from_post_html_minimal():
     """
     data = _extract_data_from_post_html(html, "http://post.url", "post123", "group_url")
     assert data is not None
-    assert data["post_author_name"] == "Author Name"
+    assert data["author_name"] == "Author Name"
 
 
 def test_extract_data_from_post_html_empty():

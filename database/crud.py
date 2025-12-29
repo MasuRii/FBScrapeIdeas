@@ -63,16 +63,27 @@ def add_scraped_post(db_conn: sqlite3.Connection, post_data: dict, group_id: int
     """
     try:
         cursor = db_conn.cursor()
+
+        # Unify keys and handle fallbacks for different scraper formats
+        p_url = post_data.get("post_url") or post_data.get("url")
+        p_text = (
+            post_data.get("text")
+            or post_data.get("post_content_raw")
+            or post_data.get("content_text")
+        )
+        p_ts = post_data.get("timestamp") or post_data.get("posted_at")
+        p_author = post_data.get("author_name") or post_data.get("post_author_name")
+
         cursor.execute(
             sql,
             (
                 group_id,
                 post_data.get("facebook_post_id"),
-                post_data.get("post_url"),
-                post_data.get("content_text"),
-                post_data.get("posted_at"),
+                p_url,
+                p_text,
+                p_ts,
                 int(time.time()),
-                post_data.get("post_author_name"),
+                p_author,
                 post_data.get("post_author_profile_pic_url"),
                 post_data.get("post_image_url"),
             ),
@@ -80,22 +91,20 @@ def add_scraped_post(db_conn: sqlite3.Connection, post_data: dict, group_id: int
         db_conn.commit()
         if cursor.rowcount > 0:
             internal_post_id = cursor.lastrowid
-            logging.info(f"Added new post: {post_data.get('post_url')} with ID {internal_post_id}")
+            logging.info(f"Added new post: {p_url} with ID {internal_post_id}")
             return internal_post_id
         else:
-            logging.info(
-                f"Post already exists (ignored): {post_data.get('post_url')}. Retrieving existing ID."
-            )
+            logging.info(f"Post already exists (ignored): {p_url}. Retrieving existing ID.")
             cursor.execute(
                 "SELECT internal_post_id FROM Posts WHERE group_id = ? AND post_url = ?",
-                (group_id, post_data.get("post_url")),
+                (group_id, p_url),
             )
             existing_id = cursor.fetchone()
             if existing_id:
                 return existing_id[0]
             return None
     except sqlite3.Error as e:
-        logging.error(f"Error adding post {post_data.get('post_url')}: {e}")
+        logging.error(f"Error adding post {post_data.get('post_url') or post_data.get('url')}: {e}")
         db_conn.rollback()
         return None
 
@@ -223,13 +232,22 @@ def get_distinct_values(db_conn: sqlite3.Connection, field_name: str) -> list[st
     Returns:
         List of distinct values for the given field.
     """
-    if field_name not in ALLOWED_FILTER_FIELDS:
+    # Robust identifier validation via parameterized mapping
+    field_mapping = {
+        "ai_category": "ai_category",
+        "post_author_name": "post_author_name",
+        "ai_is_potential_idea": "ai_is_potential_idea",
+    }
+
+    safe_field = field_mapping.get(field_name)
+    if not safe_field:
         logging.warning(f"Field {field_name} is not allowed for distinct values retrieval.")
         return []
 
     try:
         cursor = db_conn.cursor()
-        cursor.execute(f"SELECT DISTINCT {field_name} FROM Posts WHERE {field_name} IS NOT NULL")
+        # Still uses f-string for column name but it's now from a trusted mapping, not raw input
+        cursor.execute(f"SELECT DISTINCT {safe_field} FROM Posts WHERE {safe_field} IS NOT NULL")
         return [str(row[0]) for row in cursor.fetchall()]
     except sqlite3.Error as e:
         logging.error(f"Error getting distinct values for {field_name}: {e}")
@@ -278,10 +296,19 @@ def get_all_categorized_posts(
         params.append(group_id)
 
     if filter_field and filter_value is not None:
-        if filter_field not in ALLOWED_FILTER_FIELDS:
+        # Robust identifier validation via mapping
+        field_mapping = {
+            "ai_category": "ai_category",
+            "post_author_name": "post_author_name",
+            "ai_is_potential_idea": "ai_is_potential_idea",
+        }
+
+        safe_filter_field = field_mapping.get(filter_field)
+
+        if not safe_filter_field:
             logging.warning(f"Field {filter_field} is not allowed for filtering.")
         else:
-            if filter_field == "ai_is_potential_idea":
+            if safe_filter_field == "ai_is_potential_idea":
                 try:
                     filter_value = int(filter_value)
                 except ValueError:
@@ -289,7 +316,7 @@ def get_all_categorized_posts(
                     filter_value = None
 
             if filter_value is not None:
-                conditions.append(f"Posts.{filter_field} = ?")
+                conditions.append(f"Posts.{safe_filter_field} = ?")
                 params.append(filter_value)
 
     if filters.get("start_date"):

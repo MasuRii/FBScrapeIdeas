@@ -4,3 +4,11 @@
 __pycache__
 insights.db
 .vscode
+temp_competitors/
+session_state.json
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+.cache

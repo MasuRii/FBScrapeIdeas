@@ -1,6 +1,7 @@
 import getpass
 import logging
 import os
+import subprocess
 import sys
 
 from dotenv import load_dotenv
@@ -213,6 +214,13 @@ def get_google_api_key() -> str:
         logging.info("Loading Google API key from environment variables.")
         return api_key
 
+    # Skip prompting if in CI or non-interactive environment
+    if os.getenv("CI") == "true" or not sys.stdin.isatty():
+        logging.warning(
+            "CI environment detected or non-interactive shell. Skipping Google API key prompt."
+        )
+        raise ValueError("GOOGLE_API_KEY environment variable is required in non-interactive mode.")
+
     logging.info("Google API key not found. Prompting user.")
     print("\n" + "=" * 50)
     print("  Google API Key not found!")
@@ -261,6 +269,15 @@ def get_facebook_credentials() -> tuple[str, str]:
     if fb_user and fb_pass:
         logging.info("Loading Facebook credentials from environment variables.")
         return fb_user, fb_pass
+
+    # Skip prompting if in CI or non-interactive environment
+    if os.getenv("CI") == "true" or not sys.stdin.isatty():
+        logging.warning(
+            "CI environment detected or non-interactive shell. Skipping Facebook credentials prompt."
+        )
+        raise ValueError(
+            "FB_USER and FB_PASS environment variables are required in non-interactive mode."
+        )
 
     logging.info("Facebook credentials not found in environment variables. Prompting user.")
     print("\n" + "=" * 50)
@@ -318,6 +335,86 @@ def has_google_api_key() -> bool:
 def has_facebook_credentials() -> bool:
     """Check if Facebook credentials are configured."""
     return bool(os.getenv("FB_USER") and os.getenv("FB_PASS"))
+
+
+# --- Playwright Session Configuration ---
+SESSION_STATE_PATH = os.path.join(get_project_root(), "session_state.json")
+
+
+# --- Scraper Engine Configuration ---
+DEFAULT_SCRAPER_ENGINE = "selenium"
+_PLAYWRIGHT_CHECKED = False
+
+
+def get_scraper_engine() -> str:
+    """
+    Get the configured scraper engine.
+
+    Returns:
+        Engine type: 'selenium' or 'playwright'
+    """
+    return os.getenv("SCRAPER_ENGINE", DEFAULT_SCRAPER_ENGINE).lower()
+
+
+def ensure_playwright_installed():
+    """
+    Ensures Playwright Chromium is installed if the engine is set to 'playwright'.
+    Robust against repeated calls and missing package.
+    """
+    global _PLAYWRIGHT_CHECKED
+
+    if get_scraper_engine() != "playwright" or _PLAYWRIGHT_CHECKED:
+        return
+
+    try:
+        # Check if playwright package is even installed
+        import playwright  # noqa: F401
+    except ImportError:
+        logging.error(
+            "Playwright python package is not installed. Please run 'pip install playwright' first."
+        )
+        return
+
+    try:
+        logging.info("Checking/Installing Playwright Chromium (this may take a moment)...")
+        # Running 'playwright install chromium' is idempotent and fast if already installed
+        # We use a longer timeout for the install process
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout for installation
+        )
+        if result.stdout:
+            logging.debug(f"Playwright install output: {result.stdout}")
+        _PLAYWRIGHT_CHECKED = True
+        logging.info("Playwright Chromium check complete.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to install Playwright Chromium: {e.stderr or e.stdout}")
+    except subprocess.TimeoutExpired:
+        logging.error("Playwright installation timed out.")
+    except Exception as e:
+        logging.error(f"Unexpected error ensuring Playwright installation: {e}")
+
+
+# --- AI Filtering Configuration ---
+AI_FILTER_KEYWORDS = [
+    "idea",
+    "problem",
+    "help",
+    "app",
+    "thesis",
+    "project",
+    "issue",
+    "tool",
+    "software",
+    "startup",
+    "business",
+    "need",
+    "recommend",
+    "advice",
+]
 
 
 # --- AI Provider Configuration ---
@@ -384,6 +481,13 @@ def get_openai_api_key() -> str:
     if "localhost" in base_url or "127.0.0.1" in base_url:
         logging.info("Using local OpenAI-compatible provider, no API key required.")
         return "not-needed"  # Many local providers don't need a key
+
+    # Skip prompting if in CI or non-interactive environment
+    if os.getenv("CI") == "true" or not sys.stdin.isatty():
+        logging.warning(
+            "CI environment detected or non-interactive shell. Skipping OpenAI API key prompt."
+        )
+        raise ValueError("OPENAI_API_KEY environment variable is required in non-interactive mode.")
 
     logging.info("OpenAI API key not found. Prompting user.")
     print("\n" + "=" * 50)

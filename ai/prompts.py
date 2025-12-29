@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 DEFAULT_PROMPTS = {
     "post_categorization": (
         "You are an expert post categorizer. Analyze the following Facebook posts. "
-        "For each post, identify its primary category, a sub-category if applicable, "
+        "For each post, identify its primary category, a sub-category if applicable, sentiment (positive, negative, neutral, or frustrated), "
         "3-5 relevant keywords, a 1-2 sentence summary, whether it suggests a potential project idea (true/false), "
         "and provide a brief reasoning for your categorization. "
         "Posts are provided with a temporary ID. Format your response as a JSON array of objects, "
@@ -41,6 +41,7 @@ Expected JSON schema for each post:
     "postId": "POST_ID_X",
     "category": "string (one of: Problem Statement, Project Idea, Question/Inquiry, General Discussion, Other)",
     "subCategory": "string or null",
+    "sentiment": "string (one of: positive, negative, neutral, frustrated)",
     "keywords": ["keyword1", "keyword2", "keyword3"],
     "summary": "1-2 sentence summary",
     "isPotentialIdea": true/false,

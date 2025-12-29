@@ -60,10 +60,15 @@ def test_handle_cli_arguments_scrape():
     args.group_id = None
     args.num_posts = 10
     args.headless = True
+    args.engine = "playwright"
 
     handle_cli_arguments(args, mock_handlers)
     mock_handlers["scrape"].assert_called_once_with(
-        "https://facebook.com/groups/test", None, 10, True
+        group_url="https://facebook.com/groups/test",
+        group_id=None,
+        num_posts=10,
+        headless=True,
+        engine="playwright",
     )
 
 
@@ -149,11 +154,21 @@ def test_handle_cli_arguments_view():
     args.limit = 5
 
     handle_cli_arguments(args, mock_handlers)
-    mock_handlers["view"].assert_called_once()
-    call_args = mock_handlers["view"].call_args
-    assert call_args[0][0] == 1
-    assert call_args[0][1]["category"] == "Ideas"
-    assert call_args[0][2] == 5
+    mock_handlers["view"].assert_called_once_with(
+        group_id=1,
+        filters={
+            "category": "Ideas",
+            "start_date": None,
+            "end_date": None,
+            "post_author": None,
+            "comment_author": None,
+            "keyword": None,
+            "min_comments": None,
+            "max_comments": None,
+            "is_idea": False,
+        },
+        limit=5,
+    )
 
 
 # AsyncMock is available in unittest.mock from Python 3.8+

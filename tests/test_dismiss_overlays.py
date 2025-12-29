@@ -50,13 +50,16 @@ class TestOverlayDismissal(unittest.TestCase):
     @patch("scraper.facebook_scraper.WebDriverWait")
     @patch("scraper.facebook_scraper.EC")
     def test_dismiss_overlays_no_overlay(self, mock_ec, mock_wait):
-        """Test that dismiss_overlays does nothing if no overlays are found."""
+        """Test that dismiss_overlays handles no overlays correctly."""
         self.mock_driver.find_elements.return_value = []
 
         dismiss_overlays(self.mock_driver)
 
-        self.mock_driver.execute_script.assert_not_called()
-        print("✅ Verified: No actions taken when no overlays are present.")
+        # It should still call ensure_scrollable (via execute_script)
+        self.mock_driver.execute_script.assert_any_call(
+            "document.body.style.overflow = 'visible'; document.documentElement.style.overflow = 'visible';"
+        )
+        print("✅ Verified: Correct actions taken when no overlays are present.")
 
     @patch("scraper.facebook_scraper.WebDriverWait")
     @patch("scraper.facebook_scraper.EC")

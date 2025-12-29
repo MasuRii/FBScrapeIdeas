@@ -111,7 +111,10 @@ jobs:
             --hidden-import=tenacity \
             --hidden-import=requests \
             --hidden-import=dotenv \
+            --hidden-import=playwright \
+            --hidden-import=scraper.playwright_scraper \
             --collect-all google.generativeai \
+            --collect-all playwright \
             --noconfirm \
             --clean \
             main.py
