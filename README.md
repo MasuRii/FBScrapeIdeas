@@ -7,7 +7,7 @@
 [![Stars][stars-shield]][stars-url]
 [![Contributors][contributors-shield]][contributors-url]
 
-A CLI-driven application to scrape and analyze Facebook group posts for insights using Selenium and Google Gemini AI.
+A CLI-driven application to scrape and analyze Facebook group posts for insights using modern web automation and Google Gemini AI.
 
 This tool helps users identify potential capstone/thesis ideas, student problems, or other valuable insights from university Facebook group discussions by automating data collection (including posts and comments) and AI-powered categorization.
 
@@ -33,6 +33,12 @@ This tool helps users identify potential capstone/thesis ideas, student problems
 
 ## ✨ Features
 
+### 🆕 What's New in 2025
+*   **🕷️ Playwright Engine:** Now supports **Playwright** for faster, more resilient, and undetectable scraping (alongside Selenium).
+*   **🍪 Session Management:** Intelligent session handling with `storage_state.json` remembers your login, reducing suspicious activity flags and CAPTCHAs.
+*   **⚡ AI Filtering Pipeline 2.0:** A smart 2-stage pipeline that pre-filters posts using local keywords *before* sending them to the AI, significantly reducing API costs and latency.
+
+### Core Capabilities
 *   **🔒 Authenticated Facebook Group Scraping:** Securely logs into Facebook to scrape posts and comments from private or public groups.
 *   **🤖 Flexible AI Analysis:** 
     *   Support for **Google Gemini** (default) and **OpenAI-compatible** providers (OpenAI, Ollama, LM Studio, etc.)
@@ -83,27 +89,30 @@ The application collects the following data from Facebook group posts and commen
 
 *   **Language:** `Python`
 *   **Web Scraping:**
-    *   `Selenium`
-    *   `webdriver-manager`
+    *   `Playwright` (Recommended)
+    *   `Selenium` (Legacy support)
     *   `BeautifulSoup4`
 *   **AI & Machine Learning:**
     *   `google-generativeai`
+    *   `openai`
 *   **Database:**
     *   `SQLite`
 *   **CLI:**
     *   `click`
 *   **Utilities:**
     *   `python-dotenv`
-    *   `getpass`
-
+    *   `tenacity` (for resilient retries)
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have the following:
 *   Python 3.9+
 *   Git
-*   A modern Web Browser (e.g., Chrome, Firefox)
-*   Google Cloud Project & Gemini API Key
+*   **Playwright Browsers:** If using the Playwright engine (recommended), run:
+    ```bash
+    playwright install chromium
+    ```
+*   Google Cloud Project & Gemini API Key (or OpenAI key)
 
 
 ## 🚀 Getting Started
@@ -138,6 +147,7 @@ For most users, we recommend using the pre-compiled binaries:
 3.  **Install dependencies:**
     ```bash
     pip install -r requirements.txt
+    playwright install chromium  # Required for Playwright engine
     ```
 
 ### Configuration (Manual)
@@ -148,6 +158,9 @@ If you prefer to configure the application manually (e.g., for automated environ
     Create a `.env` file in the project root:
     ```dotenv
     # .env
+    
+    # Scraper Configuration (new in 2025)
+    SCRAPER_ENGINE=playwright   # Options: 'playwright' (recommended) or 'selenium'
     
     # Provider Selection (gemini or openai)
     AI_PROVIDER=gemini
@@ -160,7 +173,7 @@ If you prefer to configure the application manually (e.g., for automated environ
     > Note: Facebook credentials are entered securely during scraping or saved during the first-run interactive session.
 
 2.  **WebDriver Setup:**
-    `webdriver-manager` will handle this automatically on the first run.
+    `webdriver-manager` will handle this automatically if you choose the `selenium` engine. Playwright manages its own binaries.
 
 
 ## 🧠 AI Provider Configuration
@@ -193,7 +206,7 @@ You can connect to any service that follows the OpenAI API standard, including l
 ```dotenv
 AI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5o
+OPENAI_MODEL=gpt-4o
 ```
 
 #### 2. Ollama (Local LLM)
