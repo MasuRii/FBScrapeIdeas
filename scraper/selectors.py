@@ -16,16 +16,17 @@ class SelectorRegistry:
     # Updated 2025-12-29: Based on live DOM analysis and legacy Selenium unification
     DEFAULT_SELECTORS = {
         "article": [
-            # FeedUnit pagelets contain main posts - most reliable for full posts
+            # FeedUnit pagelets - extremely reliable for full posts
             '[data-pagelet^="FeedUnit"]',
+            # Positional index in feed - very stable for post containers
+            "div[aria-posinset]",
             # Container divs with story_message (main post content)
             'div:has(> div > div > [data-ad-rendering-role="story_message"])',
             'div:has([data-ad-rendering-role="story_message"])',
-            # Primary: role="article" - demoted as it often matches comments
+            # Primary: role="article" - often used for posts
             'div[role="article"]',
-            # Legacy selectors from Selenium engine
-            "div.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z",
-            'div[data-ad-preview="message"]',
+            # Comet feed unit
+            'div[data-testid="comet_feed_unit"]',
         ],
         "content": [
             # Primary: data-ad-rendering-role="story_message" is the 2025 standard
@@ -74,14 +75,16 @@ class SelectorRegistry:
             'a[href*="/photos/"] span',
         ],
         "permalink": [
-            # Primary: /posts/ URLs (without comment_id for main posts)
-            'a[href*="/posts/"]:not([href*="comment_id"])',
-            'a[href*="/posts/"]',
-            'a[href*="/permalink/"]',
-            'a[href*="/videos/"]',
-            'a[href*="/photos/"]',
-            'a[href*="/story.php"]',
-            "abbr/ancestor::a",
+            # Primary: /posts/ URLs explicitly excluding comment_id links
+            'a[href*="/posts/"]:not([href*="comment_id"]):not([href*="reply_comment_id"])',
+            # Permalink URLs (also exclude comment links)
+            'a[href*="/permalink/"]:not([href*="comment_id"])',
+            # Video/photo/watch posts
+            'a[href*="/videos/"]:not([href*="comment_id"])',
+            'a[href*="/photos/"]:not([href*="comment_id"])',
+            'a[href*="/watch/"]:not([href*="comment_id"])',
+            # Legacy story.php format
+            'a[href*="/story.php"]:not([href*="comment_id"])',
         ],
         "post_image": [
             "img.x168nmei",

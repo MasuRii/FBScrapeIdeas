@@ -56,6 +56,7 @@ class PlaywrightScraper:
                 )  # Track content to avoid duplicates with generated IDs
                 scroll_attempts = 0
                 max_scroll_attempts = limit * 5  # Allow for some empty scrolls
+                skipped_sponsored = 0  # Track number of sponsored posts skipped
 
                 while posts_yielded < limit and scroll_attempts < max_scroll_attempts:
                     # Aggressive overlay dismissal for both headless and non-headless
@@ -91,6 +92,15 @@ class PlaywrightScraper:
                         if not post_data:
                             continue
 
+                        # Filter out sponsored posts (gen_* IDs)
+                        if post_data["facebook_post_id"].startswith("gen_"):
+                            skipped_sponsored += 1
+                            logger.info(
+                                f"Skipping sponsored/invalid post (gen_* ID): {post_data['facebook_post_id']} "
+                                f"(Skipped: {skipped_sponsored})"
+                            )
+                            continue
+
                         # Deduplicate by post ID
                         if post_data["facebook_post_id"] in processed_ids:
                             continue
@@ -110,7 +120,8 @@ class PlaywrightScraper:
                         processed_content_hashes.add(content_hash)
                         posts_yielded += 1
                         logger.info(
-                            f"Scraped post {posts_yielded}/{limit}: {post_data['facebook_post_id']}"
+                            f"Scraped post {posts_yielded}/{limit}: {post_data['facebook_post_id']} "
+                            f"(Skipped so far: {skipped_sponsored})"
                         )
                         yield post_data
 
@@ -122,7 +133,11 @@ class PlaywrightScraper:
                     await self._scroll_gradually(page)
                     scroll_attempts += 1
 
-                logger.info(f"Finished scraping group. Total posts: {posts_yielded}")
+                logger.info(
+                    f"Finished scraping group. Total posts: {posts_yielded}, "
+                    f"Sponsored skipped: {skipped_sponsored}, "
+                    f"Scroll attempts: {scroll_attempts}"
+                )
 
             except Exception as e:
                 logger.error(f"Error during group scraping: {e}", exc_info=True)
@@ -195,15 +210,15 @@ class PlaywrightScraper:
 
     async def _scroll_gradually(self, page: Page):
         """
-        Human-mimicking scroll (800px increments with random delay).
+        Human-mimicking scroll (500-900px increments with random delay).
         """
-        scroll_step = random.randint(700, 950)
+        scroll_step = random.randint(500, 900)
         logger.debug(f"Gradual scroll: {scroll_step}px")
 
         await page.evaluate(f"window.scrollBy(0, {scroll_step})")
 
-        # Human-like delay after scrolling
-        delay = random.uniform(1.0, 2.5)
+        # Human-like delay after scrolling - slightly longer for better virtualization
+        delay = random.uniform(1.5, 3.5)
         await asyncio.sleep(delay)
 
     async def _wait_for_content(self, page: Page):
@@ -235,7 +250,7 @@ class PlaywrightScraper:
             }
 
             # Evaluate extraction script within the article element context
-            # Updated 2025-12-29: Improved extraction logic for modern Facebook DOM
+            # Updated 2025-12-30: Improved extraction logic for modern Facebook DOM
             data = await element.evaluate(js_logic.EXTRACT_POST_DATA_SCRIPT, selectors_config)
 
             # If extraction failed, trigger self-healing DOM analysis
@@ -247,8 +262,17 @@ class PlaywrightScraper:
             if not data["content_text"] and not data["post_author_name"]:
                 return None
 
+            # Skip posts with minimal content (likely empty placeholders from FB virtualization)
+            content_text = data["content_text"] or ""
+            if len(content_text.strip()) < 20 and not data["post_url"]:
+                logger.debug("Skipping post with minimal content and no URL (likely placeholder)")
+                return None
+
             # Generate or extract post ID
+            # Priority: 1) derive from post_url, 2) use extracted_post_id from JS, 3) generate UUID
             post_id = derive_post_id(data["post_url"])
+            if not post_id and data.get("extracted_post_id"):
+                post_id = data["extracted_post_id"]
             if not post_id:
                 post_id = f"gen_{uuid.uuid4().hex[:12]}"
 
@@ -269,6 +293,9 @@ class PlaywrightScraper:
                 "post_image_url": None,
                 "scraped_at": datetime.now(UTC).isoformat(),
                 "comments": [],
+                # Quality flag for filtering (not stored in DB, used for stats)
+                "_has_real_url": bool(data["post_url"]),
+                "_has_timestamp": bool(posted_at),
             }
 
         except Exception as e:

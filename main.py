@@ -114,6 +114,14 @@ async def handle_scrape_command(
             if not group_id:
                 logging.error("Failed to resolve or create group from URL")
                 return
+        elif group_id and not group_url:
+            # Fetch group URL from database if only ID is provided
+            group_info = get_group_by_id(conn, group_id)
+            if not group_info:
+                logging.error(f"Group with ID {group_id} not found in database")
+                return
+            group_url = group_info["group_url"]
+            logging.info(f"Using group URL from database: {group_url}")
 
         if engine == "playwright":
             from scraper.playwright_scraper import PlaywrightScraper
