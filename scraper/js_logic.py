@@ -623,3 +623,139 @@ PRUNE_DOM_SCRIPT = """() => {{
         console.log(`Pruned ${{count}} leaf posts, kept ${{leafNodes.length - count}}.`);
     }}
 }}"""
+
+# Comment extraction script
+# Extracts comment data including author name, profile pic, text, and Facebook ID
+EXTRACT_COMMENTS_JS = """(article, selectors) => {
+    const findFirstMatch = (selectorsList) => {
+        for (const selector of selectorsList) {
+            try {
+                const el = article.querySelector(selector);
+                if (el) return el;
+            } catch (e) {
+                // Invalid selector, skip
+            }
+        }
+        return null;
+    };
+
+    // Helper: Extract Facebook comment ID from URL or data attribute
+    const extractCommentId = (element) => {
+        if (!element) return null;
+
+        // Try href attribute (comment links usually have comment_id parameter)
+        const link = element.closest('a[href*="comment_id="]');
+        if (link) {
+            const match = link.href.match(/comment_id=([0-9]+)/);
+            if (match) return match[1];
+        }
+
+        // Try data-commentid attribute
+        const commentId = element.getAttribute('data-commentid');
+        if (commentId) return commentId;
+
+        // Try reply_comment_id
+        const replyLink = element.closest('a[href*="reply_comment_id="]');
+        if (replyLink) {
+            const match = replyLink.href.match(/reply_comment_id=([0-9]+)/);
+            if (match) return match[1];
+        }
+
+        // Generate ID from position if none found
+        return null;
+    };
+
+    // Helper: Extract profile picture URL
+    const extractProfilePic = (commentEl) => {
+        // Try img elements within the comment
+        const img = commentEl.querySelector('img');
+        if (img && img.src) {
+            // Filter out non-profile images (like reaction icons, etc.)
+            if (img.src.includes('profile') || img.src.includes('avatar') ||
+                img.alt && img.alt.toLowerCase().includes('profile')) {
+                return img.src;
+            }
+        }
+
+        // Try SVG images
+        const svgImage = commentEl.querySelector('svg image');
+        if (svgImage && svgImage.getAttribute('href')) {
+            return svgImage.getAttribute('href');
+        }
+
+        return null;
+    };
+
+    const comments = [];
+
+    // Find all comment containers within the article
+    // Comments are typically in lists (ul > li) or in divs with specific roles
+    const commentSelectors = [
+        'ul > li div[role="article"]',  // 2025 standard: comments in list items
+        'div[aria-label*="Comment by"]',  // ARIA label approach
+        '[role="article"][data-commentid]',  // Comments with explicit IDs
+    ];
+
+    for (const commentSelector of commentSelectors) {
+        try {
+            const commentElements = article.querySelectorAll(commentSelector);
+            if (commentElements.length > 0) {
+                for (const commentEl of commentElements) {
+                    // Extract comment text
+                    let commentText = null;
+                    for (const textSelector of selectors.comment_text) {
+                        try {
+                            const textEl = commentEl.querySelector(textSelector);
+                            if (textEl && textEl.innerText && textEl.innerText.trim().length > 0) {
+                                commentText = textEl.innerText.trim();
+                                break;
+                            }
+                        } catch (e) {
+                            // Skip invalid selectors
+                        }
+                    }
+
+                    // Skip if no text found
+                    if (!commentText) continue;
+
+                    // Extract author name
+                    let authorName = null;
+                    for (const authorSelector of selectors.author) {
+                        try {
+                            const authorEl = commentEl.querySelector(authorSelector);
+                            if (authorEl && authorEl.innerText && authorEl.innerText.trim().length > 0) {
+                                authorName = authorEl.innerText.trim();
+                                // Limit author name length (prevent picking up long text)
+                                if (authorName.length < 100) break;
+                            }
+                        } catch (e) {
+                            // Skip invalid selectors
+                        }
+                    }
+
+                    // Extract profile picture
+                    const profilePic = extractProfilePic(commentEl);
+
+                    // Extract comment ID
+                    const commentId = extractCommentId(commentEl);
+
+                    // Create comment object
+                    comments.push({
+                        commenterName: authorName || "Anonymous",
+                        commenterProfilePic: profilePic,
+                        commentText: commentText,
+                        commentFacebookId: commentId || `gen_${Math.random().toString(36).substr(2, 9)}`
+                    });
+                }
+
+                // If we found comments with this selector, break
+                if (comments.length > 0) break;
+            }
+        } catch (e) {
+            // Skip if selector fails
+            continue;
+        }
+    }
+
+    return comments;
+}"""

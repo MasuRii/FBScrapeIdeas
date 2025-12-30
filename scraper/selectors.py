@@ -141,6 +141,21 @@ class SelectorRegistry:
             'div[data-testid*="dialog"]',
             'div[data-testid*="cookie"]',
         ],
+        "view_more_comments": [
+            # Primary: role="button" with text containing "View" and "comment"
+            'div[role="button"]:has-text("View")',
+            'div[role="button"]:has-text("View more comments")',
+            'div[role="button"]:has-text("View previous comments")',
+            # Fallback: span elements with the text
+            'span:has-text("View more comments")',
+            'span:has-text("View previous comments")',
+            # Pattern-based: "View X more comments" where X is a number
+            'div[role="button"]:has-text("View")',
+            'a:has-text("View")',
+            # Generic comment expanders
+            'div:has-text("View")',
+            'span:has-text("View")',
+        ],
     }
 
     def __init__(self, learned_selectors_path: str | None = None):

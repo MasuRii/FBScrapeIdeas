@@ -283,6 +283,22 @@ class PlaywrightScraper:
                 if parsed_dt:
                     posted_at = parsed_dt.isoformat()
 
+            # Extract comments (expand and scrape)
+            comments = []
+            try:
+                logger.debug(f"Expanding comments for post {post_id}...")
+                clicks = await self._expand_comments(element)
+                if clicks > 0:
+                    logger.debug(f"Clicked 'View more' {clicks} time(s) for post {post_id}")
+
+                comments = await self._extract_comments(element)
+                if comments:
+                    logger.debug(f"Extracted {len(comments)} comments from post {post_id}")
+                else:
+                    logger.debug(f"No comments extracted from post {post_id}")
+            except Exception as e:
+                logger.debug(f"Error extracting comments for post {post_id}: {e}")
+
             return {
                 "facebook_post_id": post_id,
                 "post_url": data["post_url"],
@@ -292,7 +308,7 @@ class PlaywrightScraper:
                 "post_author_profile_pic_url": None,
                 "post_image_url": None,
                 "scraped_at": datetime.now(UTC).isoformat(),
-                "comments": [],
+                "comments": comments,
                 # Quality flag for filtering (not stored in DB, used for stats)
                 "_has_real_url": bool(data["post_url"]),
                 "_has_timestamp": bool(posted_at),
@@ -587,3 +603,128 @@ class PlaywrightScraper:
             await page.evaluate(js_logic.PRUNE_DOM_SCRIPT.format(selector=escaped_selector))
         except Exception as e:
             logger.debug(f"DOM pruning failed: {e}")
+
+    async def _expand_comments(self, post_locator: ElementHandle) -> int:
+        """
+        Clicks "View more comments" buttons to expand hidden comments.
+
+        Args:
+            post_locator: Playwright ElementHandle for the post
+
+        Returns:
+            Number of "View more" clicks performed
+        """
+        clicks_performed = 0
+        max_clicks = 3  # Safety limit to prevent infinite loops (optimized from 5)
+        min_comments_target = 3  # Target minimum comments before stopping (optimized from 15)
+
+        try:
+            # Get "view more comments" selectors
+            view_more_selectors = self.selector_registry.get_selectors_list("view_more_comments")
+
+            # Initial comment check - extract once before any clicks
+            try:
+                current_comments = await self._extract_comments(post_locator)
+                logger.debug(f"Initial comment count: {len(current_comments)}")
+
+                # If we already have enough comments, no expansion needed
+                if len(current_comments) >= min_comments_target:
+                    logger.debug(
+                        f"Already have {len(current_comments)} comments (target: {min_comments_target}), "
+                        "skipping expansion"
+                    )
+                    return 0
+            except Exception as e:
+                logger.debug(f"Error during initial comment check: {e}")
+                # Continue anyway, try to find "View more" button
+
+            for click_attempt in range(max_clicks):
+                # Look for "View more" button
+                view_more_button = None
+                for selector in view_more_selectors:
+                    try:
+                        button = await post_locator.query_selector(selector)
+                        if button:
+                            # Verify button is visible and contains relevant text
+                            is_visible = await button.is_visible()
+                            if is_visible:
+                                text = await button.inner_text()
+                                # Check if it's actually a "View more comments" button
+                                # (not some other "View" button)
+                                if text and ("View" in text or "comment" in text.lower()):
+                                    view_more_button = button
+                                    logger.debug(f"Found 'View more comments' button: {text[:50]}")
+                                    break
+                    except Exception as e:
+                        continue
+
+                if not view_more_button:
+                    logger.debug(
+                        f"No 'View more comments' button found (attempt {click_attempt + 1}/{max_clicks})"
+                    )
+                    break
+
+                # Click the button
+                try:
+                    await view_more_button.click(timeout=3000)
+                    clicks_performed += 1
+                    logger.debug(
+                        f"Clicked 'View more comments' button (click {clicks_performed}/{max_clicks})"
+                    )
+                    # Wait for comments to load (optimized for speed)
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+
+                    # Check comment count after clicking
+                    try:
+                        current_comments = await self._extract_comments(post_locator)
+                        logger.debug(
+                            f"After click {clicks_performed}: {len(current_comments)} comments"
+                        )
+                        if len(current_comments) >= min_comments_target:
+                            logger.debug(
+                                f"Reached {len(current_comments)} comments (target: {min_comments_target}), "
+                                f"stopping expansion"
+                            )
+                            break
+                    except Exception as e:
+                        logger.debug(f"Error checking comment count after click: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to click 'View more' button: {e}")
+                    break
+
+            return clicks_performed
+
+        except Exception as e:
+            logger.warning(f"Error expanding comments: {e}")
+            return clicks_performed
+
+    async def _extract_comments(self, post_locator: ElementHandle) -> list[dict]:
+        """
+        Extracts all visible comments from a post.
+
+        Args:
+            post_locator: Playwright ElementHandle for the post
+
+        Returns:
+            List of comment dictionaries with keys: commenterName, commenterProfilePic,
+            commentText, commentFacebookId
+        """
+        try:
+            # Build selector configuration from registry
+            selectors_config = {
+                "comment_text": self.selector_registry.get_selectors_list("comment_text"),
+                "author": self.selector_registry.get_selectors_list("author"),
+            }
+
+            # Evaluate comment extraction script within the post element context
+            comments = await post_locator.evaluate(js_logic.EXTRACT_COMMENTS_JS, selectors_config)
+
+            if not comments:
+                return []
+
+            logger.debug(f"Extracted {len(comments)} comments from post")
+            return comments
+
+        except Exception as e:
+            logger.debug(f"Error extracting comments: {e}")
+            return []
