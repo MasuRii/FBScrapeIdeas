@@ -11,7 +11,7 @@ A CLI-driven application to scrape and analyze Facebook group posts for insights
 
 This tool helps users identify potential capstone/thesis ideas, student problems, or other valuable insights from university Facebook group discussions by automating data collection (including posts and comments) and AI-powered categorization.
 
-![CLI Screenshot](assets/CLIScreenshot_2.png)
+![CLI Screenshot](assets\CLIScreenshot_4.png)
 
 
 ## 📖 Table of Contents
@@ -311,17 +311,3 @@ python main.py <command> [options]
 - Use responsibly and ethically
 
 The developers assume no liability for misuse of this tool. Scraping may violate Facebook's terms - use at your own risk.
-
-<!-- Shields.io links -->
-[python-shield]: https://img.shields.io/badge/Python-3.9%2B-blue.svg
-[python-url]: https://www.python.org/downloads/
-[license-shield]: https://img.shields.io/github/license/MasuRii/FBScrapeIdeas
-[license-url]: https://github.com/MasuRii/FBScrapeIdeas/blob/master/LICENSE
-[issues-shield]: https://img.shields.io/github/issues/MasuRii/FBScrapeIdeas
-[issues-url]: https://github.com/MasuRii/FBScrapeIdeas/issues
-[forks-shield]: https://img.shields.io/github/forks/MasuRii/FBScrapeIdeas
-[forks-url]: https://github.com/MasuRii/FBScrapeIdeas/network/members
-[stars-shield]: https://img.shields.io/github/stars/MasuRii/FBScrapeIdeas
-[stars-url]: https://github.com/MasuRii/FBScrapeIdeas/stargazers
-[contributors-shield]: https://img.shields.io/github/contributors/MasuRii/FBScrapeIdeas
-[contributors-url]: https://github.com/MasuRii/FBScrapeIdeas/graphs/contributors

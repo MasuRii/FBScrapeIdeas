@@ -1,9 +1,10 @@
 .venv/
 .env
 .pytest_cache
-__pycache__
+__pycache__/
+*.pyc
 insights.db
-.vscode
+.vscode/
 temp_competitors/
 session_state.json
 .coverage
@@ -11,4 +12,5 @@ htmlcov/
 .tox/
 nosetests.xml
 coverage.xml
-.cache
+.cache/
+logs/

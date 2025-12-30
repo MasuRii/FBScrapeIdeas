@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from scraper.facebook_scraper import dismiss_overlays
+from cli.console import safe_print
 
 
 class TestOverlayDismissal(unittest.TestCase):
@@ -45,7 +46,7 @@ class TestOverlayDismissal(unittest.TestCase):
 
         # 6. Verify button was clicked via execute_script
         self.mock_driver.execute_script.assert_any_call("arguments[0].click();", mock_button)
-        print("\n✅ Verified: Overlay button click was triggered via execute_script.")
+        safe_print("\n✅ Verified: Overlay button click was triggered via execute_script.")
 
     @patch("scraper.facebook_scraper.WebDriverWait")
     @patch("scraper.facebook_scraper.EC")
@@ -60,7 +61,7 @@ class TestOverlayDismissal(unittest.TestCase):
         self.mock_driver.execute_script.assert_any_call(
             "(() => {\n    document.body.style.overflow = 'visible';\n    document.body.style.overflowY = 'scroll';\n    document.documentElement.style.overflow = 'visible';\n    document.documentElement.style.overflowY = 'scroll';\n})()"
         )
-        print("✅ Verified: Correct actions taken when no overlays are present.")
+        safe_print("✅ Verified: Correct actions taken when no overlays are present.")
 
     @patch("scraper.facebook_scraper.WebDriverWait")
     @patch("scraper.facebook_scraper.EC")
@@ -84,7 +85,7 @@ class TestOverlayDismissal(unittest.TestCase):
         # Match the implementation which uses DISPATCH_ESC_SCRIPT wrapped in an IIFE
         esc_script = "(() => {\n    document.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Escape', 'code': 'Escape', 'keyCode': 27}));\n    document.dispatchEvent(new KeyboardEvent('keyup', {'key': 'Escape', 'code': 'Escape', 'keyCode': 27}));\n})()"
         self.mock_driver.execute_script.assert_any_call(esc_script)
-        print("✅ Verified: Fallback to ESC key triggered when buttons are missing.")
+        safe_print("✅ Verified: Fallback to ESC key triggered when buttons are missing.")
 
 
 if __name__ == "__main__":

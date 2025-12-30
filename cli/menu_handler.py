@@ -5,21 +5,43 @@ Handles both interactive menu and command-line argument modes.
 
 import argparse
 import asyncio
-import getpass
 import os
 import re
 from datetime import datetime
 from typing import Optional
 
-ASCII_ART = r"""
- _____  ____        _____   __  ____    ____  ____    ___      ____  ___      ___   ____  _____
-|     ||    \      / ___/  /  ]|    \  /    T|    \  /  _]    l    j|   \    /  _] /    T/ ___/
-|   __j|  o  )    (   \_  /  / |  D  )Y  o  ||  o  )/  [_      |  T |    \  /  [_ Y  o  (   \_
-|  l_  |     T     \__  T/  /  |    / |     ||   _/Y    _]     |  | |  D  YY    _]|     |\__  T
-|   _] |  O  |     /  \ /   \_ |    \ |  _  ||  |  |   [_      |  | |     ||   [_ |  _  |/  \ |
-|  T   |     |     \    \     ||  .  Y|  |  ||  |  |     T     j  l |     ||     T|  |  |\    |
-l__j   l_____j      \___j\____jl__j\_jl__j__jl__j  l_____j    |____jl_____jl_____jl__j__j \___j
-"""
+# Import console utilities
+try:
+    from cli.console import (
+        clear_screen,
+        print_divider,
+        print_error,
+        print_header,
+        print_info,
+        print_menu,
+        print_section,
+        print_success,
+        print_warning,
+        show_provider_status,
+        show_settings_status,
+        ask,
+    )
+except ImportError:
+    # Fallback for development when running from project root
+    from console import (
+        clear_screen,
+        print_divider,
+        print_error,
+        print_header,
+        print_info,
+        print_menu,
+        print_section,
+        print_success,
+        print_warning,
+        show_provider_status,
+        show_settings_status,
+        ask,
+    )
 
 # --- Input Validation Helpers ---
 
@@ -87,7 +109,7 @@ def get_validated_input(prompt: str, validator, error_msg: str, allow_empty: boo
         Validated input string
     """
     while True:
-        value = input(prompt).strip()
+        value = ask(prompt).strip()
         if not value and allow_empty:
             return value
         if not value and not allow_empty:
@@ -145,32 +167,7 @@ def get_ai_provider_status() -> dict:
 def display_provider_info():
     """Display current AI provider information for user confirmation."""
     status = get_ai_provider_status()
-
-    print("\n" + "-" * 50)
-    print("  AI PROVIDER STATUS")
-    print("-" * 50)
-
-    provider_display = status["provider"].upper()
-    if status["provider"] == "gemini":
-        provider_display = "Google Gemini"
-    elif status["provider"] == "openai":
-        provider_display = "OpenAI-Compatible"
-
-    print(f"  Provider: {provider_display}")
-    print(f"  Model: {status['model']}")
-
-    if status["base_url"] and status["provider"] == "openai":
-        print(f"  Base URL: {status['base_url']}")
-
-    key_status = "[OK] Configured" if status["api_key_configured"] else "[X] Not configured"
-    print(f"  API Key: {key_status}")
-
-    if status["custom_prompts_loaded"]:
-        print(f"  Custom Prompts: [OK] Loaded ({', '.join(status['custom_prompt_keys'])})")
-    else:
-        print("  Custom Prompts: Using defaults")
-
-    print("-" * 50)
+    show_provider_status(status)
 
 
 def handle_ai_settings_menu():
@@ -178,7 +175,6 @@ def handle_ai_settings_menu():
     from config import (
         get_ai_provider_type,
         get_gemini_model,
-        get_google_api_key,
         get_openai_base_url,
         get_openai_model,
         has_google_api_key,
@@ -187,9 +183,23 @@ def handle_ai_settings_menu():
     )
 
     while True:
-        print("\n" + "=" * 50)
-        print("  AI SETTINGS")
-        print("=" * 50)
+        print_header("AI Settings")
+
+        # Show current status using rich panel
+        show_provider_status(get_ai_provider_status())
+        print_divider()
+
+        # Define AI settings menu items
+        ai_menu = [
+            {"key": "1", "label": "Switch AI Provider", "description": ""},
+            {"key": "2", "label": "Configure Gemini", "description": "model & API key"},
+            {"key": "3", "label": "Configure OpenAI", "description": "base URL, model & API key"},
+            {"key": "4", "label": "View/Test Current Prompts", "description": ""},
+            {"key": "5", "label": "Show Custom Prompts Path", "description": ""},
+            {"key": "0", "label": "Back to Settings Menu", "description": ""},
+        ]
+
+        print_menu(ai_menu, "AI Options")
 
         # Show current status
         status = get_ai_provider_status()
@@ -217,7 +227,7 @@ def handle_ai_settings_menu():
         print("=" * 50)
 
         try:
-            choice = input("\nSelect option: ").strip()
+            choice = ask("Select option").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n")
             break
@@ -246,33 +256,46 @@ def handle_switch_provider():
     current = get_ai_provider_type()
     providers = list_available_providers()
 
-    print("\n  Available AI Providers:")
+    print_section("Available AI Providers")
+
+    provider_menu = []
     for i, provider in enumerate(providers, 1):
-        current_marker = " (current)" if provider == current else ""
+        current_marker = " ← [dim]current[/dim]" if provider == current else ""
         if provider == "gemini":
-            print(f"    {i}. Google Gemini{current_marker}")
+            provider_menu.append(
+                {"key": str(i), "label": f"Google Gemini{current_marker}", "description": ""}
+            )
         elif provider == "openai":
-            print(f"    {i}. OpenAI-Compatible (OpenAI, Ollama, LM Studio, etc.){current_marker}")
+            provider_menu.append(
+                {
+                    "key": str(i),
+                    "label": f"OpenAI-Compatible{current_marker}",
+                    "description": "OpenAI, Ollama, LM Studio, etc.",
+                }
+            )
+    provider_menu.append({"key": "0", "label": "Cancel", "description": ""})
+
+    print_menu(provider_menu, "Provider Selection")
 
     try:
-        choice = input("\n  Select provider (1-2, or 0 to cancel): ").strip()
+        choice = ask("Select provider (1-2, or 0 to cancel)").strip()
 
         if choice == "0":
             return
         elif choice == "1":
             if save_credential_to_env("AI_PROVIDER", "gemini"):
-                print("  [OK] Switched to Gemini provider!")
+                print_success("  Switched to Gemini provider!")
             else:
-                print("  [X] Failed to save provider setting.")
+                print_error("  Failed to save provider setting.")
         elif choice == "2":
             if save_credential_to_env("AI_PROVIDER", "openai"):
-                print("  [OK] Switched to OpenAI-compatible provider!")
+                print_success("  Switched to OpenAI-compatible provider!")
             else:
-                print("  [X] Failed to save provider setting.")
+                print_error("  Failed to save provider setting.")
         else:
-            print("  Invalid choice.")
+            print_error("  Invalid choice.")
     except (EOFError, KeyboardInterrupt):
-        print("\n  Cancelled.")
+        print_warning("\n  Cancelled.")
 
 
 def handle_gemini_config():
@@ -284,24 +307,33 @@ def handle_gemini_config():
         save_credential_to_env,
     )
 
-    print("\n" + "-" * 50)
-    print("  GEMINI CONFIGURATION")
-    print("-" * 50)
+    print_header("Gemini Configuration")
 
     current_model = get_gemini_model()
-    key_status = "[OK] Configured" if has_google_api_key() else "[X] Not configured"
+    key_status = (
+        "[green]✓ Configured[/green]" if has_google_api_key() else "[red]✗ Not configured[/red]"
+    )
 
-    print(f"\n  Current Model: {current_model}")
-    print(f"  API Key: {key_status}")
+    settings_info = {
+        "Current Model": current_model,
+        "API Key": key_status,
+    }
 
-    print("\n  1. List & Select Gemini Model")
-    print("  2. Update Google API Key")
-    print("  0. Back")
+    show_settings_status(settings_info)
+    print_divider()
+
+    gemini_menu = [
+        {"key": "1", "label": "List & Select Gemini Model", "description": ""},
+        {"key": "2", "label": "Update Google API Key", "description": ""},
+        {"key": "0", "label": "Back", "description": ""},
+    ]
+
+    print_menu(gemini_menu, "Gemini Options")
 
     try:
-        choice = input("\n  Select option: ").strip()
+        choice = ask("Select option").strip()
     except (EOFError, KeyboardInterrupt):
-        print("\n  Cancelled.")
+        print_warning("\n  Cancelled.")
         return
 
     if choice == "1":
@@ -311,7 +343,7 @@ def handle_gemini_config():
     elif choice == "0":
         return
     else:
-        print("  Invalid choice.")
+        print_error("  Invalid choice.")
 
 
 def handle_select_gemini_model():
@@ -322,7 +354,7 @@ def handle_select_gemini_model():
         print("\n  [X] Google API key is not configured!")
         print("    Please configure your API key first.")
         try:
-            input("\n  Press Enter to continue...")
+            ask("Press Enter to continue")
         except (EOFError, KeyboardInterrupt):
             pass
         return
@@ -339,7 +371,7 @@ def handle_select_gemini_model():
         if not models:
             print("  [X] Could not retrieve models. Check your API key and network connection.")
             try:
-                input("\n  Press Enter to continue...")
+                ask("Press Enter to continue")
             except (EOFError, KeyboardInterrupt):
                 pass
             return
@@ -385,7 +417,7 @@ def handle_select_gemini_model():
         print("-" * 50)
 
         try:
-            selection = input(f"\n  Select model (1-{len(all_display)}, or 0 to cancel): ").strip()
+            selection = ask(f"Select model (1-{len(all_display)}, or 0 to cancel)").strip()
 
             if selection == "0":
                 return
@@ -411,7 +443,7 @@ def handle_select_gemini_model():
         print(f"  [X] Error: {e}")
 
     try:
-        input("\n  Press Enter to continue...")
+        ask("Press Enter to continue")
     except (EOFError, KeyboardInterrupt):
         pass
 
@@ -423,7 +455,7 @@ def handle_update_google_api_key():
     print("\n  Get your API key from: https://aistudio.google.com/apikey")
 
     try:
-        api_key = getpass.getpass("  Enter new Google API Key: ").strip()
+        api_key = ask("Enter new Google API Key", password=True).strip()
         if api_key:
             if save_credential_to_env("GOOGLE_API_KEY", api_key):
                 print("  [OK] API key updated!")
@@ -444,34 +476,42 @@ def handle_openai_config():
         save_credential_to_env,
     )
 
-    print("\n" + "-" * 50)
-    print("  OPENAI-COMPATIBLE CONFIGURATION")
-    print("-" * 50)
+    print_header("OpenAI-Compatible Configuration")
 
     current_model = get_openai_model()
     current_base_url = get_openai_base_url()
-    key_status = "[OK] Configured" if has_openai_api_key() else "[X] Not configured"
+    key_status = (
+        "[green]✓ Configured[/green]" if has_openai_api_key() else "[red]✗ Not configured[/red]"
+    )
 
-    print(f"\n  Current Base URL: {current_base_url}")
-    print(f"  Current Model: {current_model}")
-    print(f"  API Key: {key_status}")
+    settings_info = {
+        "Current Base URL": current_base_url,
+        "Current Model": current_model,
+        "API Key": key_status,
+    }
 
-    print("\n  Common Base URLs:")
-    print("    • OpenAI: https://api.openai.com/v1")
-    print("    • Ollama: http://localhost:11434/v1")
-    print("    • LM Studio: http://localhost:1234/v1")
-    print("    • OpenRouter: https://openrouter.ai/api/v1")
+    show_settings_status(settings_info)
+    print_section("Common Base URLs:")
+    print_info("  • OpenAI: https://api.openai.com/v1")
+    print_info("  • Ollama: http://localhost:11434/v1")
+    print_info("  • LM Studio: http://localhost:1234/v1")
+    print_info("  • OpenRouter: https://openrouter.ai/api/v1")
+    print_divider()
 
-    print("\n  1. Update Base URL")
-    print("  2. List & Select Model (from endpoint)")
-    print("  3. Manually Set Model Name")
-    print("  4. Update OpenAI API Key")
-    print("  0. Back")
+    openai_menu = [
+        {"key": "1", "label": "Update Base URL", "description": ""},
+        {"key": "2", "label": "List & Select Model", "description": "from endpoint"},
+        {"key": "3", "label": "Manually Set Model Name", "description": ""},
+        {"key": "4", "label": "Update OpenAI API Key", "description": ""},
+        {"key": "0", "label": "Back", "description": ""},
+    ]
+
+    print_menu(openai_menu, "OpenAI Options")
 
     try:
-        choice = input("\n  Select option: ").strip()
+        choice = ask("Select option").strip()
     except (EOFError, KeyboardInterrupt):
-        print("\n  Cancelled.")
+        print_warning("\n  Cancelled.")
         return
 
     if choice == "1":
@@ -504,7 +544,7 @@ def handle_update_openai_base_url():
     print("    0. Cancel")
 
     try:
-        choice = input("\n  Select option: ").strip()
+        choice = ask("Select option").strip()
 
         url_map = {
             "1": "https://api.openai.com/v1",
@@ -518,7 +558,7 @@ def handle_update_openai_base_url():
         elif choice in url_map:
             new_url = url_map[choice]
         elif choice == "5":
-            new_url = input("  Enter custom base URL: ").strip()
+            new_url = ask("Enter custom base URL").strip()
             if not new_url:
                 print("  No URL entered, cancelling.")
                 return
@@ -555,7 +595,7 @@ def handle_select_openai_model():
             print("  [X] OpenAI package not installed.")
             print("    Install with: pip install openai")
             try:
-                input("\n  Press Enter to continue...")
+                ask("Press Enter to continue")
             except (EOFError, KeyboardInterrupt):
                 pass
             return
@@ -566,7 +606,7 @@ def handle_select_openai_model():
         except ValueError as e:
             print(f"  [X] {e}")
             try:
-                input("\n  Press Enter to continue...")
+                ask("Press Enter to continue")
             except (EOFError, KeyboardInterrupt):
                 pass
             return
@@ -578,7 +618,7 @@ def handle_select_openai_model():
             print("    Check your base URL, API key, and network connection.")
             print("    For local providers, make sure the server is running.")
             try:
-                input("\n  Press Enter to continue...")
+                ask("Press Enter to continue")
             except (EOFError, KeyboardInterrupt):
                 pass
             return
@@ -595,7 +635,7 @@ def handle_select_openai_model():
         print("-" * 50)
 
         try:
-            selection = input(f"\n  Select model (1-{len(models)}, or 0 to cancel): ").strip()
+            selection = ask(f"Select model (1-{len(models)}, or 0 to cancel)").strip()
 
             if selection == "0":
                 return
@@ -620,7 +660,7 @@ def handle_select_openai_model():
         print(f"  [X] Error: {e}")
 
     try:
-        input("\n  Press Enter to continue...")
+        ask("Press Enter to continue")
     except (EOFError, KeyboardInterrupt):
         pass
 
@@ -637,7 +677,7 @@ def handle_set_openai_model_manually():
     print("    • OpenRouter: anthropic/claude-3-sonnet, etc.")
 
     try:
-        model_name = input("\n  Enter model name: ").strip()
+        model_name = ask("Enter model name").strip()
         if model_name:
             if save_credential_to_env("OPENAI_MODEL", model_name):
                 print(f"  [OK] Model set to: {model_name}")
@@ -663,7 +703,7 @@ def handle_update_openai_api_key():
         print("\n  Get your API key from: https://platform.openai.com/api-keys")
 
     try:
-        api_key = getpass.getpass("  Enter new OpenAI API Key: ").strip()
+        api_key = ask("Enter new OpenAI API Key", password=True).strip()
         if api_key:
             if save_credential_to_env("OPENAI_API_KEY", api_key):
                 print("  [OK] API key updated!")
@@ -695,7 +735,7 @@ def handle_view_prompts():
     print("  0. Back")
 
     try:
-        choice = input("\n  Select prompt to view: ").strip()
+        choice = ask("Select prompt to view").strip()
     except (EOFError, KeyboardInterrupt):
         print("\n  Cancelled.")
         return
@@ -733,7 +773,7 @@ def handle_view_prompts():
     print("=" * 50)
 
     try:
-        input("\n  Press Enter to continue...")
+        ask("Press Enter to continue")
     except (EOFError, KeyboardInterrupt):
         pass
 
@@ -768,7 +808,7 @@ def handle_show_prompts_path():
     print("\n  See custom_prompts.example.json for a full example.")
 
     try:
-        input("\n  Press Enter to continue...")
+        ask("Press Enter to continue")
     except (EOFError, KeyboardInterrupt):
         pass
 
@@ -785,39 +825,52 @@ def handle_settings_menu():
         has_facebook_credentials,
         has_google_api_key,
         save_credential_to_env,
+        get_scraper_engine,
     )
 
     while True:
-        print("\n" + "=" * 50)
-        print("  SETTINGS")
-        print("=" * 50)
+        print_header("Settings")
 
         # Show current status
-        api_status = "Configured" if has_google_api_key() else "Not configured"
-        fb_status = "Configured" if has_facebook_credentials() else "Not configured"
-        print(f"\n  Google API Key: {api_status}")
-        print(f"  Facebook Credentials: {fb_status}")
+        api_status = (
+            "[green]✓ Configured[/green]" if has_google_api_key() else "[red]✗ Not configured[/red]"
+        )
+        fb_status = (
+            "[green]✓ Configured[/green]"
+            if has_facebook_credentials()
+            else "[red]✗ Not configured[/red]"
+        )
 
         # Show AI provider status
         status = get_ai_provider_status()
         provider_name = "Google Gemini" if status["provider"] == "gemini" else "OpenAI-Compatible"
-        print(f"  AI Provider: {provider_name} ({status['model']})")
+        engine_name = get_scraper_engine().capitalize()
 
-        from config import get_scraper_engine
+        settings_info = {
+            "Google API Key": api_status,
+            "Facebook Credentials": fb_status,
+            "AI Provider": f"{provider_name} ({status['model']})",
+            "Scraper Engine": engine_name,
+        }
 
-        print(f"  Scraper Engine: {get_scraper_engine().capitalize()}")
+        show_settings_status(settings_info)
+        print_divider()
 
-        print("\n  1. Update Google API Key")
-        print("  2. Update Facebook Credentials")
-        print("  3. Switch Scraper Engine")
-        print("  4. AI Provider Settings")
-        print("  5. Show Config Locations")
-        print("  6. Clear All Saved Credentials")
-        print("  0. Back to Main Menu")
-        print("=" * 50)
+        # Define settings menu items
+        settings_menu = [
+            {"key": "1", "label": "Update Google API Key", "description": ""},
+            {"key": "2", "label": "Update Facebook Credentials", "description": ""},
+            {"key": "3", "label": "Switch Scraper Engine", "description": ""},
+            {"key": "4", "label": "AI Provider Settings", "description": ""},
+            {"key": "5", "label": "Show Config Locations", "description": ""},
+            {"key": "6", "label": "Clear All Saved Credentials", "description": "DANGER"},
+            {"key": "0", "label": "Back to Main Menu", "description": ""},
+        ]
+
+        print_menu(settings_menu, "Settings Options")
 
         try:
-            choice = input("\nSelect option: ").strip()
+            choice = ask("Select option").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n")
             break
@@ -825,7 +878,7 @@ def handle_settings_menu():
         if choice == "1":
             print("\nGet your API key from: https://aistudio.google.com/apikey")
             try:
-                api_key = getpass.getpass("Enter new Google API Key: ").strip()
+                api_key = ask("Enter new Google API Key", password=True).strip()
                 if api_key:
                     if save_credential_to_env("GOOGLE_API_KEY", api_key):
                         print("  API key updated!")
@@ -838,8 +891,8 @@ def handle_settings_menu():
 
         elif choice == "2":
             try:
-                username = input("Enter Facebook Email/Username: ").strip()
-                password = getpass.getpass("Enter Facebook Password: ")
+                username = ask("Enter Facebook Email/Username").strip()
+                password = ask("Enter Facebook Password", password=True)
                 if username and password:
                     saved_user = save_credential_to_env("FB_USER", username)
                     saved_pass = save_credential_to_env("FB_PASS", password)
@@ -861,7 +914,7 @@ def handle_settings_menu():
                 print("  1. Selenium (Stable, requires Chrome)")
                 print("  2. Playwright (2025 Standard, resilient, headless support)")
 
-                engine_choice = input("\n  Select engine (1-2): ").strip()
+                engine_choice = ask("Select engine (1-2)").strip()
                 if engine_choice == "1":
                     save_credential_to_env("SCRAPER_ENGINE", "selenium")
                     print("  [OK] Switched to Selenium.")
@@ -877,11 +930,11 @@ def handle_settings_menu():
         elif choice == "5":
             print(f"\n  Config file: {get_env_file_path()}")
             print(f"  Database: {get_db_path()}")
-            input("\nPress Enter to continue...")
+            ask("Press Enter to continue")
 
         elif choice == "6":
             try:
-                confirm = input("  Delete all saved credentials? Type 'yes' to confirm: ").strip()
+                confirm = ask("Delete all saved credentials? Type 'yes' to confirm").strip()
                 if confirm.lower() == "yes":
                     if delete_env_file():
                         print("  Credentials deleted!")
@@ -1019,46 +1072,70 @@ def create_arg_parser():
     return parser
 
 
-def run_interactive_menu(command_handlers):
-    """Run the interactive CLI menu interface.
+def run_interactive_menu(
+    command_handlers,
+    scraper_service=None,
+    ai_service=None,
+    group_service=None,
+    post_service=None,
+):
+    """Run interactive CLI menu interface.
 
     Args:
         command_handlers: Dict mapping command names to their handler functions
+        scraper_service: ScraperService instance for scrape operations
+        ai_service: AIService instance for AI processing
+        group_service: GroupService instance for group management
+        post_service: PostService instance for post retrieval
     """
     while True:
         clear_screen()
-        print(ASCII_ART)
-        print("\nFB Scrape Ideas - Command Menu:")
-        print("\n1. Data Collection:")
-        print("   - Scrape Posts, Author Details & Comments")
-        print("   - Configurable post count and headless mode")
-        print("   - Supports Selenium and Playwright engines")
-        print("\n2. Session Management (Playwright):")
-        print("   - Manual Login to Facebook")
-        print("   - Validate and save session state")
-        print("\n3. AI Processing:")
-        print("   - Process Posts & Comments with AI")
-        print("   - Categorizes content and analyzes sentiment")
-        print("   - Supports Gemini and OpenAI-compatible providers")
-        print("\n4. Data Access & Filtering:")
-        print("   - Browse Posts with Author Details & Comments")
-        print("   - Filter by category, date, author, keywords")
-        print("   - View potential project ideas")
-        print("\n5. Data Management & Analytics:")
-        print("   - Export Data to CSV/JSON")
-        print("   - Manage Facebook Groups (Add/List/Remove)")
-        print("   - View Statistics & Trends")
-        print("\n6. Settings:")
-        print("   - Manage API Keys & Credentials")
-        print("   - Configure Scraper Engine (Selenium/Playwright)")
-        print("   - Configure AI Provider (Gemini/OpenAI)")
-        print("\n7. Exit")
+        print_header("FB Scrape Ideas", "University Group Insights Platform")
 
-        choice = input("\nEnter your choice (1-7): ").strip()
+        # Define menu items
+        menu_items = [
+            {
+                "key": "1",
+                "label": "Data Collection",
+                "description": "Scrape posts, author details & comments",
+            },
+            {
+                "key": "2",
+                "label": "Session Management",
+                "description": "Manual login to Facebook (Playwright)",
+            },
+            {
+                "key": "3",
+                "label": "AI Processing",
+                "description": "Process posts & comments with AI categorization",
+            },
+            {
+                "key": "4",
+                "label": "Data Access & Filtering",
+                "description": "Browse posts with filters (category, date, author)",
+            },
+            {
+                "key": "5",
+                "label": "Data Management & Analytics",
+                "description": "Export data, manage groups, view statistics",
+            },
+            {
+                "key": "6",
+                "label": "Settings",
+                "description": "Manage API keys, credentials & configuration",
+            },
+            {"key": "7", "label": "Exit", "description": "Quit application"},
+        ]
+
+        print_menu(menu_items, "Main Menu")
+
+        choice = ask("Enter your choice (1-7)").strip()
 
         if choice == "1":
             try:
                 from config import get_scraper_engine
+
+                print_section("Data Collection - Scrape Facebook Posts")
 
                 # Validate Facebook URL
                 group_url = get_validated_input(
@@ -1069,42 +1146,39 @@ def run_interactive_menu(command_handlers):
                 )
 
                 # Validate number of posts
-                num_posts_input = input(
-                    "Enter number of posts to scrape (default: 20, press Enter for default): "
+                num_posts_input = ask(
+                    "Enter number of posts to scrape (default: 20, press Enter for default)"
                 ).strip()
                 if num_posts_input:
                     is_valid, num_posts = validate_positive_integer(num_posts_input)
                     if not is_valid:
-                        print("Invalid number. Using default value of 20.")
+                        print_warning("Invalid number. Using default value of 20.")
                         num_posts = 20
                 else:
                     num_posts = 20
 
-                headless_input = (
-                    input("Run in headless mode? (yes/no, default: no): ").strip().lower()
-                )
-                headless = headless_input == "yes"
+                # Use defaults from config - no more headless/engine prompts
+                headless = True  # Default to headless for cleaner UX
+                engine = get_scraper_engine()  # Use configured engine
 
-                current_engine = get_scraper_engine()
-                engine_input = (
-                    input(f"Engine (selenium/playwright, default: {current_engine}): ")
-                    .strip()
-                    .lower()
-                )
-                engine = (
-                    engine_input if engine_input in ["selenium", "playwright"] else current_engine
-                )
+                print_divider()
+                print_info(f"Engine: {engine} | Headless: {headless} | Posts: {num_posts}")
+                print_divider()
 
                 asyncio.run(
                     command_handlers["scrape"](
-                        group_url=group_url, num_posts=num_posts, headless=headless, engine=engine
+                        scraper_service,
+                        group_url=group_url,
+                        num_posts=num_posts,
+                        headless=headless,
+                        engine=engine,
                     )
                 )
             except KeyboardInterrupt:
-                print("\nOperation cancelled by user.")
+                print_warning("\nOperation cancelled by user.")
             except Exception as e:
-                print(f"\nError during scraping: {e}")
-            input("\nPress Enter to continue...")
+                print_error(f"\nError during scraping: {e}")
+            ask("Press Enter to continue")
 
         elif choice == "2":
             try:
@@ -1114,7 +1188,7 @@ def run_interactive_menu(command_handlers):
                 print("\nOperation cancelled by user.")
             except Exception as e:
                 print(f"\nError during manual login: {e}")
-            input("\nPress Enter to continue...")
+            ask("Press Enter to continue")
 
         elif choice == "3":
             try:
@@ -1126,23 +1200,23 @@ def run_interactive_menu(command_handlers):
                 if not status["api_key_configured"]:
                     print("\n  [!] Warning: API key not configured for current provider!")
                     print("  Configure it in Settings > AI Provider Settings")
-                    proceed = input("\n  Continue anyway? (y/n): ").strip().lower()
+                    proceed = ask("Continue anyway? (y/n)").strip().lower()
                     if proceed != "y":
-                        input("\nPress Enter to continue...")
+                        ask("Press Enter to continue")
                         continue
 
-                asyncio.run(command_handlers["process_ai"]())
+                asyncio.run(command_handlers["process_ai"](ai_service))
             except KeyboardInterrupt:
                 print("\nOperation cancelled by user.")
             except Exception as e:
                 print(f"\nError during AI processing: {e}")
-            input("\nPress Enter to continue...")
+            ask("Press Enter to continue")
 
         elif choice == "4":
             try:
                 filters = {}
-                category_filter = input(
-                    "Enter category to filter by (optional, press Enter for all): "
+                category_filter = ask(
+                    "Enter category to filter by (optional, press Enter for all)"
                 ).strip()
                 if category_filter:
                     filters["category"] = category_filter
@@ -1164,19 +1238,19 @@ def run_interactive_menu(command_handlers):
                 if end_date:
                     filters["end_date"] = end_date
 
-                post_author = input("Filter by post author name (optional): ").strip()
+                post_author = ask("Filter by post author name (optional)").strip()
                 if post_author:
                     filters["post_author"] = post_author
 
-                comment_author = input("Filter by comment author name (optional): ").strip()
+                comment_author = ask("Filter by comment author name (optional)").strip()
                 if comment_author:
                     filters["comment_author"] = comment_author
 
-                keyword = input("Keyword search (optional): ").strip()
+                keyword = ask("Keyword search (optional)").strip()
                 if keyword:
                     filters["keyword"] = keyword
 
-                min_comments = input("Minimum comments (optional): ").strip()
+                min_comments = ask("Minimum comments (optional)").strip()
                 if min_comments:
                     is_valid, value = validate_positive_integer(min_comments)
                     if is_valid and value > 0:
@@ -1184,7 +1258,7 @@ def run_interactive_menu(command_handlers):
                     elif min_comments:
                         print("Invalid number for minimum comments, ignoring filter.")
 
-                max_comments = input("Maximum comments (optional): ").strip()
+                max_comments = ask("Maximum comments (optional)").strip()
                 if max_comments:
                     is_valid, value = validate_positive_integer(max_comments)
                     if is_valid and value > 0:
@@ -1192,18 +1266,16 @@ def run_interactive_menu(command_handlers):
                     elif max_comments:
                         print("Invalid number for maximum comments, ignoring filter.")
 
-                is_idea = (
-                    input("Show only potential ideas? (yes/no, default: no): ").strip().lower()
-                )
+                is_idea = ask("Show only potential ideas? (yes/no, default: no)").strip().lower()
                 if is_idea == "yes":
                     filters["is_idea"] = True
 
-                command_handlers["view"](filters=filters)
+                command_handlers["view"](post_service, filters=filters)
             except KeyboardInterrupt:
                 print("\nOperation cancelled by user.")
             except Exception as e:
                 print(f"\nError viewing posts: {e}")
-            input("\nPress Enter to continue...")
+            ask("Press Enter to continue")
 
         elif choice == "5":
             print("\nData Management Options:")
@@ -1214,11 +1286,11 @@ def run_interactive_menu(command_handlers):
             print("5. View Statistics")
             print("6. Back to Main Menu")
 
-            sub_choice = input("\nEnter your choice (1-6): ").strip()
+            sub_choice = ask("Enter your choice (1-6)").strip()
 
             try:
                 if sub_choice == "1":
-                    name = input("Enter group name: ").strip()
+                    name = ask("Enter group name").strip()
                     if not name:
                         print("Group name cannot be empty.")
                     else:
@@ -1228,21 +1300,21 @@ def run_interactive_menu(command_handlers):
                             "Invalid URL. Please enter a valid Facebook group URL.",
                             allow_empty=False,
                         )
-                        command_handlers["add_group"](name, url)
+                        command_handlers["add_group"](group_service, name, url)
 
                 elif sub_choice == "2":
-                    command_handlers["list_groups"]()
+                    command_handlers["list_groups"](group_service)
 
                 elif sub_choice == "3":
-                    group_id_input = input("Enter group ID to remove: ").strip()
+                    group_id_input = ask("Enter group ID to remove").strip()
                     is_valid, group_id = validate_positive_integer(group_id_input)
                     if is_valid and group_id > 0:
-                        command_handlers["remove_group"](group_id)
+                        command_handlers["remove_group"](group_service, group_id)
                     else:
                         print("Invalid group ID. Must be a positive number.")
 
                 elif sub_choice == "4":
-                    format_choice = input("Choose format (csv/json): ").strip().lower()
+                    format_choice = ask("Choose format (csv/json)").strip().lower()
                     if format_choice not in ["csv", "json"]:
                         print("Invalid format. Must be 'csv' or 'json'")
                     else:
@@ -1258,7 +1330,7 @@ def run_interactive_menu(command_handlers):
                         print("  * [path]_comments.[ext] - Comment data")
                         print("  * [path]_all.[ext]     - Combined data")
 
-                        output_file = input("\nEnter output file path: ").strip()
+                        output_file = ask("Enter output file path").strip()
                         if not output_file:
                             print("Output path cannot be empty.")
                         else:
@@ -1283,7 +1355,7 @@ def run_interactive_menu(command_handlers):
                             command_handlers["export"](args)
 
                 elif sub_choice == "5":
-                    command_handlers["stats"]()
+                    command_handlers["stats"](post_service)
 
                 elif sub_choice == "6":
                     continue
@@ -1294,25 +1366,36 @@ def run_interactive_menu(command_handlers):
                 print("\nOperation cancelled by user.")
             except Exception as e:
                 print(f"\nError: {e}")
-            input("\nPress Enter to continue...")
+            ask("Press Enter to continue")
 
         elif choice == "6":
             handle_settings_menu()
 
         elif choice == "7":
-            print("Exiting application. Goodbye!")
+            print_success("Exiting application. Goodbye!")
             break
         else:
-            print("Invalid choice. Please enter a number between 1-7.")
-            input("\nPress Enter to continue...")
+            print_error("Invalid choice. Please enter a number between 1-7.")
+            ask("Press Enter to continue")
 
 
-def handle_cli_arguments(args, command_handlers):
-    """Handle command-line arguments and execute the appropriate command handler.
+def handle_cli_arguments(
+    args,
+    command_handlers,
+    scraper_service=None,
+    ai_service=None,
+    group_service=None,
+    post_service=None,
+):
+    """Handle command-line arguments and execute appropriate command handler.
 
     Args:
         args: Parsed command-line arguments from argparse
         command_handlers: Dict mapping command names to their handler functions
+        scraper_service: ScraperService instance for scrape operations
+        ai_service: AIService instance for AI processing
+        group_service: GroupService instance for group management
+        post_service: PostService instance for post retrieval
     """
     try:
         if args.command:
@@ -1323,6 +1406,7 @@ def handle_cli_arguments(args, command_handlers):
                     return
                 asyncio.run(
                     command_handlers["scrape"](
+                        scraper_service,
                         group_url=args.group_url,
                         group_id=args.group_id,
                         num_posts=args.num_posts,
@@ -1333,7 +1417,7 @@ def handle_cli_arguments(args, command_handlers):
             elif args.command == "manual-login":
                 asyncio.run(command_handlers["manual_login"]())
             elif args.command == "process-ai":
-                asyncio.run(command_handlers["process_ai"](args.group_id))
+                asyncio.run(command_handlers["process_ai"](ai_service, args.group_id))
             elif args.command == "view":
                 filters = {
                     "category": args.category,
@@ -1346,7 +1430,9 @@ def handle_cli_arguments(args, command_handlers):
                     "max_comments": args.max_comments,
                     "is_idea": args.is_idea,
                 }
-                command_handlers["view"](group_id=args.group_id, filters=filters, limit=args.limit)
+                command_handlers["view"](
+                    post_service, group_id=args.group_id, filters=filters, limit=args.limit
+                )
             elif args.command == "export-data":
                 command_handlers["export"](args)
             elif args.command == "add-group":
@@ -1354,13 +1440,13 @@ def handle_cli_arguments(args, command_handlers):
                 if not validate_facebook_url(args.url):
                     print("Error: Invalid Facebook group URL provided.")
                     return
-                command_handlers["add_group"](args.name, args.url)
+                command_handlers["add_group"](group_service, args.name, args.url)
             elif args.command == "list-groups":
-                command_handlers["list_groups"]()
+                command_handlers["list_groups"](group_service)
             elif args.command == "remove-group":
-                command_handlers["remove_group"](args.id)
+                command_handlers["remove_group"](group_service, args.id)
             elif args.command == "stats":
-                command_handlers["stats"]()
+                command_handlers["stats"](post_service)
             elif args.command == "setup":
                 from config import run_setup_wizard
 
@@ -1373,8 +1459,14 @@ def handle_cli_arguments(args, command_handlers):
         print(f"Error executing command '{args.command}': {e}")
 
 
-def run_cli(command_handlers):
-    """Main entry point for the CLI interface.
+def run_cli(
+    command_handlers,
+    scraper_service=None,
+    ai_service=None,
+    group_service=None,
+    post_service=None,
+):
+    """Main entry point for CLI interface.
 
     Supports both interactive menu and command-line argument modes.
 
@@ -1389,11 +1481,24 @@ def run_cli(command_handlers):
             - 'list_groups': Function to handle listing groups
             - 'remove_group': Function to handle removing groups
             - 'stats': Function to handle statistics display
+        scraper_service: ScraperService instance for scrape operations
+        ai_service: AIService instance for AI processing
+        group_service: GroupService instance for group management
+        post_service: PostService instance for post retrieval
     """
     parser = create_arg_parser()
     args = parser.parse_args()
 
     if args.command:
-        handle_cli_arguments(args, command_handlers)
+        handle_cli_arguments(
+            args,
+            command_handlers,
+            scraper_service,
+            ai_service,
+            group_service,
+            post_service,
+        )
     else:
-        run_interactive_menu(command_handlers)
+        run_interactive_menu(
+            command_handlers, scraper_service, ai_service, group_service, post_service
+        )
